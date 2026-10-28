@@ -8,10 +8,19 @@ are maintained separately.
 
 ## Implementation status
 
-The initial implementation is the **per-node seed cache controller** and
-operator image build pipeline. Instance creation is not enabled. Reference disk
-preparation, recert identity isolation, the SNOVirtualMachine API/controller,
-readiness/credential handoff, and LWE SNO mode remain to be implemented and
+The deployed implementation is the **per-node seed cache controller** and
+operator image build pipeline, with no seed images enabled. Source now includes
+the immutable `SNOVirtualMachine` API/CRD, durable identity/address allocations,
+local disk/VM/API resource builders, and independent bootstrap credentials.
+These are tested provisioning components; the complete instance reconciler,
+readiness handoff, and storage finalizer are not yet wired into the manager.
+`instances.enabled: true` is rejected explicitly in this build.
+
+The disposable reference SNO is installed and healthy, with verified external
+API TLS/readiness and an internally reachable application route. The
+[LWE SNO adapter](https://github.com/kylape/llm-workload-environment-operator/pull/1)
+is implemented in a draft PR. Seed capture, two-clone recert identity isolation,
+per-node cache qualification, and complete provider integration remain to be
 validated. No five-minute startup result is claimed.
 
 The host currently uses TopoLVM without snapshot classes; CDI selects `copy`.
@@ -113,4 +122,8 @@ retention, and refusal to adopt unrelated volumes. They do not validate CDI,
 TopoLVM or recert against the real cluster. The Tekton pipeline has been
 admitted and run successfully on the supplied host. The runtime Deployment is
 healthy under its service account with `images: []`; no cache imports or guest
-VMs are enabled. See [initial build provenance](docs/build-provenance.md).
+VMs are enabled. Provisioning unit tests additionally check durable unique
+identities, retry/exhaustion behavior, local source placement, minimum root
+capacity, TLS passthrough, independent SSH host/client keys, password hashes,
+and separation of management private keys from guest configuration media.
+See [build provenance](docs/build-provenance.md).
