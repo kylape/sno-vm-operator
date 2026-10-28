@@ -1,0 +1,9 @@
+/bin/
+/local/
+*.kubeconfig
+*.qcow2
+*.iso
+*.img
+*.key
+auth.json
+.dockerconfigjson
