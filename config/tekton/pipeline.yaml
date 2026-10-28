@@ -1,0 +1,154 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: sno-vm-operator-build
+spec:
+  description: Test an exact Git commit and publish the operator to Quay.
+  params:
+    - name: git-url
+      type: string
+      default: https://github.com/kylape/sno-vm-operator.git
+    - name: git-revision
+      type: string
+      description: Full 40-character source commit SHA; branches and tags are rejected.
+    - name: image
+      type: string
+      description: Destination tag under quay.io/klape/sno-vm-operator.
+  workspaces:
+    - name: source
+    - name: registry-auth
+      description: Secret containing .dockerconfigjson with Quay push credentials.
+  results:
+    - name: source-commit
+      value: $(tasks.verify.results.source-commit)
+    - name: image-digest
+      value: $(tasks.publish.results.image-digest)
+    - name: image-reference
+      value: quay.io/klape/sno-vm-operator@$(tasks.publish.results.image-digest)
+  tasks:
+    - name: verify
+      params:
+        - name: git-url
+          value: $(params.git-url)
+        - name: git-revision
+          value: $(params.git-revision)
+      workspaces:
+        - name: source
+          workspace: source
+      taskSpec:
+        params:
+          - name: git-url
+            type: string
+          - name: git-revision
+            type: string
+        workspaces:
+          - name: source
+        results:
+          - name: source-commit
+        steps:
+          - name: checkout
+            image: docker.io/alpine/git@sha256:062a01ad7a0eb17cff382bc5e26086b4d710e56dfdfdf001109a49b6d9bd378c
+            env:
+              - name: SOURCE_URL
+                value: $(params.git-url)
+              - name: SOURCE_REVISION
+                value: $(params.git-revision)
+              - name: SOURCE_PATH
+                value: $(workspaces.source.path)/repository
+              - name: COMMIT_RESULT
+                value: $(results.source-commit.path)
+            script: |
+              #!/bin/sh
+              set -eu
+              case "$SOURCE_URL" in https://github.com/kylape/sno-vm-operator.git) ;; *) exit 1 ;; esac
+              test "${#SOURCE_REVISION}" -eq 40
+              case "$SOURCE_REVISION" in *[!0-9a-f]*) exit 1 ;; esac
+              test ! -e "$SOURCE_PATH"
+              git init "$SOURCE_PATH"
+              git -C "$SOURCE_PATH" remote add origin "$SOURCE_URL"
+              git -C "$SOURCE_PATH" fetch --depth 1 origin "$SOURCE_REVISION"
+              git -C "$SOURCE_PATH" checkout --detach FETCH_HEAD
+              test "$(git -C "$SOURCE_PATH" rev-parse HEAD)" = "$SOURCE_REVISION"
+              printf '%s' "$SOURCE_REVISION" > "$COMMIT_RESULT"
+          - name: test-and-build
+            image: docker.io/library/golang@sha256:cd78d88e00afadbedd272f977d375a6247455f3a4b1178f8ae8bbcb201743a8a
+            workingDir: $(workspaces.source.path)/repository
+            computeResources:
+              requests:
+                cpu: "2"
+                memory: 2Gi
+              limits:
+                memory: 4Gi
+            env:
+              - name: GOCACHE
+                value: /tmp/go-cache
+              - name: GOMODCACHE
+                value: /tmp/go-mod-cache
+              - name: GOMAXPROCS
+                value: "4"
+              - name: GOFLAGS
+                value: -mod=readonly
+            script: |
+              #!/bin/sh
+              set -eu
+              go mod verify
+              go test -race ./...
+              go vet ./...
+              mkdir -p bin
+              CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/manager ./cmd/manager
+    - name: publish
+      runAfter: [verify]
+      params:
+        - name: image
+          value: $(params.image)
+        - name: source-commit
+          value: $(tasks.verify.results.source-commit)
+      workspaces:
+        - name: source
+          workspace: source
+        - name: registry-auth
+          workspace: registry-auth
+      taskSpec:
+        params:
+          - name: image
+            type: string
+          - name: source-commit
+            type: string
+        workspaces:
+          - name: source
+          - name: registry-auth
+            readOnly: true
+        results:
+          - name: image-digest
+        steps:
+          - name: build-and-push
+            image: quay.io/buildah/stable@sha256:4f47edc1eace7a3fcbafb2c4bb784d13225986c1253e321f68c7229a33d628a0
+            workingDir: $(workspaces.source.path)/repository
+            securityContext:
+              privileged: true
+              runAsUser: 0
+            computeResources:
+              requests:
+                cpu: "1"
+                memory: 1Gi
+              limits:
+                memory: 2Gi
+            env:
+              - name: DESTINATION_IMAGE
+                value: $(params.image)
+              - name: SOURCE_COMMIT
+                value: $(params.source-commit)
+              - name: REGISTRY_AUTH_FILE
+                value: $(workspaces.registry-auth.path)/.dockerconfigjson
+              - name: DIGEST_RESULT
+                value: $(results.image-digest.path)
+            script: |
+              #!/usr/bin/env bash
+              set -Eeuo pipefail
+              [[ "$DESTINATION_IMAGE" =~ ^quay\.io/klape/sno-vm-operator:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]
+              test -s "$REGISTRY_AUTH_FILE"
+              buildah --storage-driver=vfs bud --isolation=chroot --userns=host \
+                --format=oci --file Containerfile --tag "$DESTINATION_IMAGE" \
+                --label "org.opencontainers.image.revision=$SOURCE_COMMIT" .
+              buildah --storage-driver=vfs push --authfile "$REGISTRY_AUTH_FILE" \
+                --digestfile "$DIGEST_RESULT" "$DESTINATION_IMAGE" "docker://$DESTINATION_IMAGE"
