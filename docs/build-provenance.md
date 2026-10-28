@@ -29,3 +29,21 @@ imports, local volume binding, clone speed, recert, or SNO provisioning.
 Subsequent documentation and deployment-manifest commits can reference this
 image without rebuilding its unchanged manager binary. New controller code
 requires a new successful Tekton build and a new pinned deployment digest.
+
+## Current deployed cache build
+
+The subsequent successful `sno-vm-operator-build-jrbj5` PipelineRun built source
+`f82d5e75fd8c9c60fe1fb04274fbe7ebadb27cf4` and published
+`quay.io/klape/sno-vm-operator:git-f82d5e75fd8c` with digest
+`sha256:e14816ba6984908bdbfb7aeeb62a6385e98ff15933c008abec5c899310e7c36c`.
+The deployment manifest pins that build. It includes the corrected nonroot pause
+binder and has run with an empty image policy.
+
+Later source adds the experimental instance API, policy, allocations, resource
+builders, credential generation, and unit tests. Those changes are not part of
+the deployed digest. The manager explicitly rejects instance enablement until
+the complete reconciliation/readiness/deletion flow is available.
+
+Host API timeouts recurred during reference work on 2026-10-28. A new Tekton run
+and runtime rollout are deferred until host stability permits reliable build
+execution. Passing local tests does not constitute a new published image.
