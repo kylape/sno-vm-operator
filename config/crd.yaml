@@ -1,0 +1,152 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: snovirtualmachines.sno.klape.io
+spec:
+  group: sno.klape.io
+  scope: Namespaced
+  names:
+    plural: snovirtualmachines
+    singular: snovirtualmachine
+    kind: SNOVirtualMachine
+    listKind: SNOVirtualMachineList
+    shortNames:
+    - snovm
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        x-kubernetes-validations:
+        - rule: size(self.metadata.name) <= 48 && self.metadata.name.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+          message: instance names must be DNS labels of at most 48 characters
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            default: {}
+            x-kubernetes-validations:
+            - rule: self == oldSelf
+              message: SNO instance configuration is immutable
+            properties:
+              imageProfile:
+                type: string
+                default: default
+                minLength: 1
+                maxLength: 63
+              clusterName:
+                type: string
+                maxLength: 63
+                pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+              resources:
+                type: object
+                default: {}
+                properties:
+                  cores:
+                    type: integer
+                    format: int32
+                    minimum: 8
+                    maximum: 4096
+                    default: 16
+                  memory:
+                    type: string
+                    maxLength: 32
+                    pattern: ^[1-9][0-9]*(Mi|Gi|Ti)$
+                    default: 128Gi
+                  rootDisk:
+                    type: string
+                    maxLength: 32
+                    pattern: ^[1-9][0-9]*(Mi|Gi|Ti)$
+                    default: 500Gi
+              rootDiskRetentionPolicy:
+                type: string
+                default: Delete
+                enum:
+                - Delete
+                - Retain
+              sshPublicKeySecretRef: &id001
+                type: object
+                required:
+                - name
+                properties:
+                  name:
+                    type: string
+                    minLength: 1
+                    maxLength: 253
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+              imageDigest:
+                type: string
+              clusterID:
+                type: string
+              node:
+                type: string
+              apiEndpoint:
+                type: string
+              vmRef: *id001
+              rootPVCRef: *id001
+              credentialsSecretRef: *id001
+              conditions:
+                type: array
+                x-kubernetes-list-type: map
+                x-kubernetes-list-map-keys:
+                - type
+                items:
+                  type: object
+                  required:
+                  - type
+                  - status
+                  - reason
+                  - message
+                  - lastTransitionTime
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                      enum:
+                      - 'True'
+                      - 'False'
+                      - Unknown
+                    reason:
+                      type: string
+                      minLength: 1
+                    message:
+                      type: string
+                    observedGeneration:
+                      type: integer
+                      format: int64
+                      minimum: 0
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
+              milestones:
+                type: object
+                additionalProperties:
+                  type: string
+                  format: date-time
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: API
+      type: string
+      jsonPath: .status.apiEndpoint
+    - name: Node
+      type: string
+      jsonPath: .status.node
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
