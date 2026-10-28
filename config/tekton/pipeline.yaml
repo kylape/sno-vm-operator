@@ -63,7 +63,6 @@ spec:
               case "$SOURCE_URL" in https://github.com/kylape/sno-vm-operator.git) ;; *) exit 1 ;; esac
               test "${#SOURCE_REVISION}" -eq 40
               case "$SOURCE_REVISION" in *[!0-9a-f]*) exit 1 ;; esac
-              # Kubelet creates later steps' workingDir before checkout runs.
               mkdir -p "$SOURCE_PATH"
               test -z "$(find "$SOURCE_PATH" -mindepth 1 -maxdepth 1 -print -quit)"
               git init "$SOURCE_PATH"
@@ -74,7 +73,7 @@ spec:
               printf '%s' "$SOURCE_REVISION" > "$COMMIT_RESULT"
           - name: test-and-build
             image: docker.io/library/golang@sha256:cd78d88e00afadbedd272f977d375a6247455f3a4b1178f8ae8bbcb201743a8a
-            workingDir: $(workspaces.source.path)/repository
+            workingDir: $(workspaces.source.path)
             computeResources:
               requests:
                 cpu: "2"
@@ -93,6 +92,7 @@ spec:
             script: |
               #!/bin/sh
               set -eu
+              cd repository
               go mod verify
               go test -race ./...
               go vet ./...
