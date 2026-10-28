@@ -116,8 +116,8 @@ func (r Allocator) Create(ctx context.Context, request *api.SNOVirtualMachine, i
 		}
 	}
 	pool, err := netip.ParsePrefix(r.Config.Instances.MachinePool)
-	if err != nil {
-		return nil, err
+	if err != nil || !pool.Addr().Is4() || pool.Bits() < 12 || pool.Bits() > 23 || pool != pool.Masked() {
+		return nil, fmt.Errorf("invalid guest machine pool")
 	}
 	baseBytes := pool.Addr().As4()
 	base := binary.BigEndian.Uint32(baseBytes[:])
