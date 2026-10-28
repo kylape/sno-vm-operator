@@ -33,6 +33,10 @@ func main() {
 		logger.Error(err, "invalid configuration")
 		os.Exit(1)
 	}
+	if policy.Instances.Enabled {
+		logger.Error(nil, "instance reconciliation is not available in this build; keep instances.enabled=false")
+		os.Exit(1)
+	}
 	if interval < time.Second {
 		logger.Error(nil, "interval must be at least one second")
 		os.Exit(1)
