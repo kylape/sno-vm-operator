@@ -24,7 +24,7 @@ spec:
     - name: image-digest
       value: $(tasks.publish.results.image-digest)
     - name: image-reference
-      value: quay.io/klape/sno-vm-operator@$(tasks.publish.results.image-digest)
+      value: $(tasks.publish.results.image-reference)
   tasks:
     - name: verify
       params:
@@ -120,6 +120,7 @@ spec:
             readOnly: true
         results:
           - name: image-digest
+          - name: image-reference
         steps:
           - name: build-and-push
             image: quay.io/buildah/stable@sha256:4f47edc1eace7a3fcbafb2c4bb784d13225986c1253e321f68c7229a33d628a0
@@ -142,6 +143,8 @@ spec:
                 value: $(workspaces.registry-auth.path)/.dockerconfigjson
               - name: DIGEST_RESULT
                 value: $(results.image-digest.path)
+              - name: REFERENCE_RESULT
+                value: $(results.image-reference.path)
             script: |
               #!/usr/bin/env bash
               set -Eeuo pipefail
@@ -152,3 +155,4 @@ spec:
                 --label "org.opencontainers.image.revision=$SOURCE_COMMIT" .
               buildah --storage-driver=vfs push --authfile "$REGISTRY_AUTH_FILE" \
                 --digestfile "$DIGEST_RESULT" "$DESTINATION_IMAGE" "docker://$DESTINATION_IMAGE"
+              printf 'quay.io/klape/sno-vm-operator@%s' "$(cat "$DIGEST_RESULT")" > "$REFERENCE_RESULT"
