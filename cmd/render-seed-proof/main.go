@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	api "github.com/kylape/sno-vm-operator/api/v1alpha1"
@@ -60,6 +61,9 @@ func render(name, namespace, node, storage, pvc, sourceNamespace, metadata, pull
 		if len(validation.IsDNS1123Subdomain(v)) > 0 {
 			return fmt.Errorf("invalid proof placement")
 		}
+	}
+	if strings.HasPrefix(node, "master") || strings.Contains(storage, "control-plane") {
+		return fmt.Errorf("candidate proofs must use worker-local storage")
 	}
 	network, err := netip.ParsePrefix(cidr)
 	if err != nil || !network.Addr().Is4() || network.Bits() != 24 || network != network.Masked() {
