@@ -1,0 +1,24 @@
+# Administrator policy; no image imports until a tested seed digest is enabled.
+namespace: sno-vm-system
+binderImage: registry.access.redhat.com/ubi10/ubi-minimal@sha256:ab67cd02caf8706e34a695a1432ebe965934f6128ec352a6c3f4048b43a4fb5e
+maxConcurrentImports: 1
+maxImportAttempts: 3
+placements:
+  - storageClass: lvms-a100-tier1-storage
+    nodeSelector:
+      matchExpressions:
+        - key: node-role.kubernetes.io/a100-gpu
+          operator: Exists
+  - storageClass: lvms-b200-gpu-ib-tier1-storage
+    nodeSelector:
+      matchExpressions:
+        - key: node-role.kubernetes.io/b200-gpu-ib
+          operator: Exists
+images: []
+# After recert/clone proof, add an immutable revision, e.g.:
+# images:
+#   - name: ocp-4-22-18-r1
+#     reference: quay.io/klape/sno-vm-image@sha256:<64-character-digest>
+#     architecture: amd64
+#     diskSize: 500Gi
+#     registrySecret: seed-registry-read
