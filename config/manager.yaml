@@ -1,0 +1,135 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sno-vm-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sno-vm-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sno-vm-cache-observer
+rules:
+  - apiGroups: ['']
+    resources: [nodes]
+    verbs: [get, list]
+  - apiGroups: ['']
+    resources: [persistentvolumes]
+    verbs: [get]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sno-vm-cache-observer
+subjects:
+  - kind: ServiceAccount
+    name: sno-vm-operator
+    namespace: sno-vm-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sno-vm-cache-observer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sno-vm-cache-manager
+rules:
+  - apiGroups: [cdi.kubevirt.io]
+    resources: [datavolumes]
+    verbs: [get, list, create, delete]
+  - apiGroups: ['']
+    resources: [persistentvolumeclaims]
+    verbs: [get]
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [get, create, delete]
+  - apiGroups: ['']
+    resources: [configmaps]
+    verbs: [get, create, update]
+  - apiGroups: ['']
+    resources: [secrets]
+    resourceNames: [seed-registry-read]
+    verbs: [get]
+  - apiGroups: ['']
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sno-vm-cache-manager
+subjects:
+  - kind: ServiceAccount
+    name: sno-vm-operator
+    namespace: sno-vm-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sno-vm-cache-manager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sno-vm-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sno-vm-operator
+  template:
+    metadata:
+      labels:
+        app: sno-vm-operator
+    spec:
+      serviceAccountName: sno-vm-operator
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: manager
+          # Replace with the digest returned by the successful Tekton PipelineRun.
+          image: quay.io/klape/sno-vm-operator:unpublished
+          args: [--config=/etc/sno-operator/config.yaml]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          ports:
+            - name: health
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+          volumeMounts:
+            - name: policy
+              mountPath: /etc/sno-operator
+              readOnly: true
+      volumes:
+        - name: policy
+          configMap:
+            name: sno-vm-cache-policy
