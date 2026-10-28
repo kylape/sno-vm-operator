@@ -41,7 +41,7 @@ func Binder(namespace, node, name, image string, tolerations []corev1.Toleration
 			Tolerations:                  tolerations,
 			RestartPolicy:                corev1.RestartPolicyAlways,
 			SecurityContext:              &corev1.PodSecurityContext{RunAsNonRoot: &trueValue, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
-			Containers: []corev1.Container{{Name: "bind", Image: image, Command: []string{"/bin/sh", "-c", "sleep infinity"},
+			Containers: []corev1.Container{{Name: "bind", Image: image, Command: []string{"/pause"},
 				SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: &falseValue, ReadOnlyRootFilesystem: &trueValue, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
 				Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1m"), corev1.ResourceMemory: resource.MustParse("16Mi")}, Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("32Mi")}},
 				VolumeDevices:   []corev1.VolumeDevice{{Name: "seed", DevicePath: "/dev/seed"}},
