@@ -58,8 +58,9 @@ func sshKey(comment string) ([]byte, []byte, error) {
 }
 
 // GenerateCredentials must run once before VM creation, followed by durable
-// Secret creation. Reconciliation must load existing Secrets rather than rotate
-// the identity of a disk that has already started specialization.
+// Secret creation. Persist Management first: its canonical bootstrap copy lets
+// reconciliation finish Bootstrap creation after a crash without rotating keys.
+// Existing Secrets must be loaded rather than regenerating a started identity.
 func GenerateCredentials(request *api.SNOVirtualMachine, a Allocation, pullSecret []byte, userKeys []byte, dns []string) (*Credentials, error) {
 	if a.UID != string(request.UID) || a.Namespace != request.Namespace || a.Name != request.Name || !a.Image.Qualified || a.Image.SeedID == "" {
 		return nil, fmt.Errorf("credentials require the allocated qualified seed identity")
@@ -116,6 +117,6 @@ func GenerateCredentials(request *api.SNOVirtualMachine, a Allocation, pullSecre
 	immutable := true
 	return &Credentials{
 		Bootstrap:  &corev1.Secret{ObjectMeta: metadata(request, request.Name+"-bootstrap"), Type: corev1.SecretTypeOpaque, Immutable: &immutable, Data: map[string][]byte{"config.json": data}},
-		Management: &corev1.Secret{ObjectMeta: metadata(request, request.Name+"-management"), Type: corev1.SecretTypeOpaque, Immutable: &immutable, Data: map[string][]byte{"ssh-privatekey": clientPrivate, "ssh-host-publickey": hostPublic, "kubeadmin-password": []byte(password)}},
+		Management: &corev1.Secret{ObjectMeta: metadata(request, request.Name+"-management"), Type: corev1.SecretTypeOpaque, Immutable: &immutable, Data: map[string][]byte{"ssh-privatekey": clientPrivate, "ssh-host-publickey": hostPublic, "kubeadmin-password": []byte(password), "bootstrap-config.json": append([]byte(nil), data...)}},
 	}, nil
 }
