@@ -1,0 +1,32 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: sno-vm-operator-build-
+  namespace: sno-vm-build
+spec:
+  pipelineRef:
+    name: sno-vm-operator-build
+  taskRunTemplate:
+    serviceAccountName: sno-vm-builder
+    podTemplate:
+      nodeSelector:
+        kubernetes.io/arch: amd64
+  timeouts:
+    pipeline: 45m0s
+  params:
+    - name: git-revision
+      value: REPLACE_WITH_FULL_COMMIT_SHA
+    - name: image
+      value: quay.io/klape/sno-vm-operator:REPLACE_WITH_COMMIT_TAG
+  workspaces:
+    - name: source
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          storageClassName: lvms-a100-tier1-storage
+          resources:
+            requests:
+              storage: 5Gi
+    - name: registry-auth
+      secret:
+        secretName: quay-push
