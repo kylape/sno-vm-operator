@@ -71,8 +71,9 @@ For CDI `pullMethod: pod`, `seed-registry-read` is an Opaque Secret in
 password). The operator only checks that these keys exist. CDI uses them for the
 import. RBAC permits reads of that Secret name only; adjust it if changing policy.
 
-Render deployment resources with `kubectl kustomize config`, replace the
-unpublished image with the successful Tekton digest, and review before applying.
+Render deployment resources with `kubectl kustomize config` and review before
+applying. The manifest pins the initial successful Tekton digest; replace it
+with the result of subsequent builds when deploying new controller code.
 The runtime operator uses restricted permissions; it does not require the build
 service account's privileged SCC. Cache source PVCs are raw block volumes.
 
@@ -109,5 +110,7 @@ Unit tests use a fake Kubernetes client to check immutable image policy,
 architecture filtering, import concurrency across restart, node-specific binding,
 PV ownership/locality checks, cache-loss repair, bounded retries, revision
 retention, and refusal to adopt unrelated volumes. They do not validate CDI,
-TopoLVM, SCC admission, or recert against the real cluster. Tekton and runtime
-manifests require cluster validation before deployment.
+TopoLVM or recert against the real cluster. The Tekton pipeline has been
+admitted and run successfully on the supplied host. The runtime Deployment is
+healthy under its service account with `images: []`; no cache imports or guest
+VMs are enabled. See [initial build provenance](docs/build-provenance.md).
