@@ -58,6 +58,9 @@ func TestCredentialsHaveIndependentKeysAndKeepManagementKeyOutOfGuest(t *testing
 	if bytes.Equal(first.Management.Data["ssh-privatekey"], second.Management.Data["ssh-privatekey"]) || bytes.Equal(first.Management.Data["ssh-host-publickey"], second.Management.Data["ssh-host-publickey"]) {
 		t.Fatal("credentials are not independently generated")
 	}
+	if !bytes.Equal(first.Management.Data["bootstrap-config.json"], first.Bootstrap.Data["config.json"]) {
+		t.Fatal("cannot recover bootstrap creation from durable management material")
+	}
 	if first.Bootstrap.Immutable == nil || !*first.Bootstrap.Immutable || first.Management.Immutable == nil || !*first.Management.Immutable {
 		t.Fatal("bootstrap credentials must be immutable")
 	}
