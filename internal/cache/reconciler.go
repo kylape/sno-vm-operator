@@ -202,7 +202,7 @@ func (r *Reconciler) syncEntry(ctx context.Context, node corev1.Node, p Placemen
 		}
 		tolerated := false
 		for _, t := range p.Tolerations {
-			if t.ToleratesTaint(&taint) {
+			if t.ToleratesTaint(log.FromContext(ctx), &taint, false) {
 				tolerated = true
 			}
 		}
