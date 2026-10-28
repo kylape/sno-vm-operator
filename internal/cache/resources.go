@@ -33,7 +33,6 @@ func DataVolume(namespace, node string, p Placement, image Image) *unstructured.
 // the block device; CDI retains exclusive responsibility for writing the disk.
 func Binder(namespace, node, name, image string, tolerations []corev1.Toleration) *corev1.Pod {
 	falseValue, trueValue := false, true
-	uid := int64(65532)
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: name + "-bind", Namespace: namespace, Labels: map[string]string{"app.kubernetes.io/managed-by": ManagedBy, LabelPrefix + "cache-key": name}},
 		Spec: corev1.PodSpec{
@@ -41,7 +40,7 @@ func Binder(namespace, node, name, image string, tolerations []corev1.Toleration
 			NodeSelector:                 map[string]string{"kubernetes.io/hostname": node},
 			Tolerations:                  tolerations,
 			RestartPolicy:                corev1.RestartPolicyAlways,
-			SecurityContext:              &corev1.PodSecurityContext{RunAsNonRoot: &trueValue, RunAsUser: &uid, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
+			SecurityContext:              &corev1.PodSecurityContext{RunAsNonRoot: &trueValue, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
 			Containers: []corev1.Container{{Name: "bind", Image: image, Command: []string{"/bin/sh", "-c", "sleep infinity"},
 				SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: &falseValue, ReadOnlyRootFilesystem: &trueValue, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
 				Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1m"), corev1.ResourceMemory: resource.MustParse("16Mi")}, Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("32Mi")}},
