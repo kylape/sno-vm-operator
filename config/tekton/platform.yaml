@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sno-vm-build
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sno-vm-builder
+  namespace: sno-vm-build
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sno-vm-buildah
+  namespace: sno-vm-build
+rules:
+  - apiGroups: [security.openshift.io]
+    resources: [securitycontextconstraints]
+    resourceNames: [privileged]
+    verbs: [use]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sno-vm-buildah
+  namespace: sno-vm-build
+subjects:
+  - kind: ServiceAccount
+    name: sno-vm-builder
+    namespace: sno-vm-build
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sno-vm-buildah
