@@ -100,8 +100,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          # Replace with the digest returned by the successful Tekton PipelineRun.
-          image: quay.io/klape/sno-vm-operator:unpublished
+          # Tekton run sno-vm-operator-build-9s9jw; source 07bbae402f2303041fefcc732be86820ba5d02f6.
+          image: quay.io/klape/sno-vm-operator@sha256:07057c84bacc20f23d17988548a0aa9a9fc4ecbd6b32728b2f296df35177108a
           args: [--config=/etc/sno-operator/config.yaml]
           securityContext:
             allowPrivilegeEscalation: false
