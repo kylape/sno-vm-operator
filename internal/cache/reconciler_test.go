@@ -149,10 +149,10 @@ func TestReadyRequiresSuccessfulImportAndCorrectLocalPV(t *testing.T) {
 		t.Fatal(err)
 	}
 	pvc.Spec.VolumeName = "pv"
-	pvc.Status.Phase = corev1.ClaimBound
 	if err := r.Client.Update(context.Background(), pvc); err != nil {
 		t.Fatal(err)
 	}
+	pvc.Status.Phase = corev1.ClaimBound
 	if err := r.Client.Status().Update(context.Background(), pvc); err != nil {
 		t.Fatal(err)
 	}
