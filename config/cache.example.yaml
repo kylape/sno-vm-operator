@@ -1,6 +1,6 @@
 # Administrator policy; no image imports until a tested seed digest is enabled.
 namespace: sno-vm-system
-binderImage: registry.access.redhat.com/ubi10/ubi-minimal@sha256:ab67cd02caf8706e34a695a1432ebe965934f6128ec352a6c3f4048b43a4fb5e
+binderImage: registry.k8s.io/pause@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c
 maxConcurrentImports: 1
 maxImportAttempts: 3
 placements:
