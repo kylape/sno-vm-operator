@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/google/uuid"
+	"net/netip"
 	"os"
 	"regexp"
 
@@ -23,12 +25,22 @@ var pinnedImage = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9./:_-]*@sha256:[a-f0
 // Config is administrator-owned policy. Image revisions are never overwritten or
 // garbage collected automatically: clones may still depend on their source.
 type Config struct {
-	Namespace            string      `json:"namespace"`
-	BinderImage          string      `json:"binderImage"`
-	MaxConcurrentImports int         `json:"maxConcurrentImports"`
-	MaxImportAttempts    int         `json:"maxImportAttempts"`
-	Placements           []Placement `json:"placements"`
-	Images               []Image     `json:"images"`
+	Namespace            string         `json:"namespace"`
+	BinderImage          string         `json:"binderImage"`
+	MaxConcurrentImports int            `json:"maxConcurrentImports"`
+	MaxImportAttempts    int            `json:"maxImportAttempts"`
+	Placements           []Placement    `json:"placements"`
+	Images               []Image        `json:"images"`
+	Instances            InstancePolicy `json:"instances,omitempty"`
+}
+
+type InstancePolicy struct {
+	Enabled            bool   `json:"enabled"`
+	DefaultImage       string `json:"defaultImage,omitempty"`
+	BaseDomain         string `json:"baseDomain,omitempty"`
+	MachinePool        string `json:"machinePool,omitempty"`
+	GuestPullSecret    string `json:"guestPullSecret,omitempty"`
+	SSHPublicKeySecret string `json:"sshPublicKeySecret,omitempty"`
 }
 
 type Placement struct {
@@ -44,6 +56,10 @@ type Image struct {
 	DiskSize     string `json:"diskSize"`
 	// CDI pod-pull credentials: accessKeyId and secretKey in the cache namespace.
 	RegistrySecret string `json:"registrySecret"`
+	// Qualification is an administrator decision after the two-clone proof.
+	Qualified    bool   `json:"qualified,omitempty"`
+	SeedID       string `json:"seedID,omitempty"`
+	SourceCAHash string `json:"sourceCAHash,omitempty"`
 }
 
 func Load(path string) (Config, error) {
@@ -100,6 +116,35 @@ func (c Config) Validate() error {
 		}
 		if len(validation.IsDNS1123Subdomain(i.RegistrySecret)) > 0 {
 			return fmt.Errorf("image %s: registrySecret is required", i.Name)
+		}
+		if i.Qualified {
+			if id, err := uuid.Parse(i.SeedID); err != nil || id.String() != i.SeedID {
+				return fmt.Errorf("image %s: qualified seed requires a canonical seedID", i.Name)
+			}
+			if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(i.SourceCAHash) {
+				return fmt.Errorf("image %s: qualified seed requires source CA bundle hash", i.Name)
+			}
+		}
+	}
+	if c.Instances.Enabled {
+		for _, label := range regexp.MustCompile(`\.`).Split(c.Instances.BaseDomain, -1) {
+			if len(validation.IsDNS1123Label(label)) > 0 {
+				return fmt.Errorf("invalid instance baseDomain")
+			}
+		}
+		pool, err := netip.ParsePrefix(c.Instances.MachinePool)
+		if err != nil || !pool.Addr().Is4() || pool.Bits() < 12 || pool.Bits() > 23 || pool != pool.Masked() {
+			return fmt.Errorf("machinePool must be a canonical IPv4 CIDR with /24 allocations")
+		}
+		for _, protected := range []string{"10.128.0.0/14", "172.30.0.0/16", "10.14.216.0/23", "10.240.0.0/16", "172.31.0.0/16"} {
+			if pool.Overlaps(netip.MustParsePrefix(protected)) {
+				return fmt.Errorf("machinePool overlaps a protected host or guest network")
+			}
+		}
+		for _, name := range []string{c.Instances.GuestPullSecret, c.Instances.SSHPublicKeySecret} {
+			if len(validation.IsDNS1123Subdomain(name)) > 0 {
+				return fmt.Errorf("instance credential Secret names are required")
+			}
 		}
 	}
 	return nil
