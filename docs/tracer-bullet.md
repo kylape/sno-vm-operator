@@ -1,7 +1,11 @@
 # Administrator tracer bullet
 
-The first proof uses the existing 500 GiB prepared reference and current LVM
-block-copy path. Disk capacity and storage-format optimization are deferred.
+The initial 500 GiB reference established the first working clone. A corrected
+50 GiB seed now passes two independent first boots and an identity-preserving
+reboot, using 500 GiB destination disks on worker LVM storage. See the
+[measured verification results](https://gitlab.cee.redhat.com/klape/inference-engineering-scratchpad/-/blob/main/sno-virt-image/verification.md).
+Clone/scheduling takes about four minutes with current CDI defaults; the
+five-minute API/application target remains unfinished.
 This administrative procedure qualifies the image; ordinary users should use
 the LWE/provider API once its complete reconciler is enabled.
 
@@ -30,6 +34,14 @@ Run both `qemu-img check` and `qemu-img compare` against the exported raw disk.
 owned by 107:107 with mode 0440. The candidate remains unqualified and must be
 pushed only to the private `quay.io/klape/sno-vm-image` repository.
 
+For compact seeds, use `scripts/compact_seed.py` to repack the captured contents
+into a 50 GiB filesystem. Native builders can recover the XFS journal first on
+an exclusive disposable copy with `scripts/recover_seed_copy.py`. Validate the
+repacked filesystem, convert it to qcow2, and compare that qcow2 with the repacked
+raw disk. Its new metadata records `diskSize: 50Gi` and a fresh seed ID. The
+source cache PVC must be 50 GiB; a 500 GiB cache would retain the larger copy cost.
+The guest gate expands the copied root partition and XFS before specialization.
+
 ## Render one disposable clone
 
 The offline renderer does not connect to Kubernetes or promote an image:
@@ -38,8 +50,8 @@ The offline renderer does not connect to Kubernetes or promote an image:
 go run ./cmd/render-seed-proof \
   --name sno-proof-one --namespace sno-seed-build \
   --node a100-01 --storage-class lvms-a100-tier1-storage \
-  --source-pvc sno-seed-root --source-namespace sno-seed-build \
-  --metadata /protected/seed-metadata.json \
+  --source-pvc sno-seed-compact50 --source-namespace sno-seed-build \
+  --metadata /protected/compact-metadata.json \
   --pull-secret /protected/pull-secret.json \
   --ssh-public-key /protected/administrator.pub \
   --dns 172.30.32.118 --machine-cidr 10.252.1.0/24 \
@@ -61,7 +73,8 @@ with different configuration.
 
 ## Verify the tracer bullet
 
-Once the VMI boots:
+Once the VMI boots, first confirm the root filesystem expanded to the requested
+capacity. Then verify:
 
 1. Pin the generated SSH host public key from the management Secret and connect
    to guest port 22 through its internal access Service. Do not accept an
