@@ -30,6 +30,7 @@ type seed struct {
 	BaseDomain   string `json:"baseDomain"`
 	IP           string `json:"ip"`
 	SourceCAHash string `json:"sourceCAHash"`
+	DiskSize     string `json:"diskSize"`
 }
 
 func main() {
@@ -85,6 +86,9 @@ func render(name, namespace, node, storage, pvc, sourceNamespace, metadata, pull
 	if id, err := uuid.Parse(source.SeedID); err != nil || id.String() != source.SeedID {
 		return fmt.Errorf("invalid seed identity")
 	}
+	if source.DiskSize == "" {
+		source.DiskSize = "500Gi" // legacy candidate metadata
+	}
 	address := network.Addr().Next().Next().String()
 	if address == source.IP {
 		return fmt.Errorf("proof cannot reuse source address")
@@ -100,7 +104,7 @@ func render(name, namespace, node, storage, pvc, sourceNamespace, metadata, pull
 	id := uuid.NewString()
 	hash := sha256.Sum256([]byte(id))
 	request := &api.SNOVirtualMachine{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, UID: types.UID(id)}}
-	allocation := provision.Allocation{UID: id, Namespace: namespace, Name: name, ClusterName: name, BaseDomain: source.BaseDomain, Hostname: name + "-0", ClusterID: uuid.NewString(), MachineCIDR: cidr, IP: address, MAC: fmt.Sprintf("02:%02x:%02x:%02x:%02x:%02x", hash[0], hash[1], hash[2], hash[3], hash[4]), Node: node, StorageClass: storage, SourcePVC: pvc, Image: cache.Image{Name: "candidate-proof", SeedID: source.SeedID, SourceCAHash: source.SourceCAHash, DiskSize: "500Gi"}}
+	allocation := provision.Allocation{UID: id, Namespace: namespace, Name: name, ClusterName: name, BaseDomain: source.BaseDomain, Hostname: name + "-0", ClusterID: uuid.NewString(), MachineCIDR: cidr, IP: address, MAC: fmt.Sprintf("02:%02x:%02x:%02x:%02x:%02x", hash[0], hash[1], hash[2], hash[3], hash[4]), Node: node, StorageClass: storage, SourcePVC: pvc, Image: cache.Image{Name: "candidate-proof", SeedID: source.SeedID, SourceCAHash: source.SourceCAHash, DiskSize: source.DiskSize}}
 	// This administrator-only candidate proof does not promote an image profile.
 	// Qualify the supplied identity only for credential rendering, then clear the
 	// bit before writing the allocation. No runtime controller consumes this file.
