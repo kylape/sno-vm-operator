@@ -20,5 +20,5 @@ images: []
 #   - name: ocp-4-22-18-r1
 #     reference: quay.io/klape/sno-vm-image@sha256:<64-character-digest>
 #     architecture: amd64
-#     diskSize: 500Gi
+#     diskSize: 50Gi
 #     registrySecret: seed-registry-read
