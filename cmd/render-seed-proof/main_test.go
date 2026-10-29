@@ -16,7 +16,7 @@ import (
 func TestProofRenderingStaysUnqualifiedAndNeverOverwritesAnEstablishedIdentity(t *testing.T) {
 	dir := t.TempDir()
 	meta, pull, key := filepath.Join(dir, "metadata.json"), filepath.Join(dir, "pull.json"), filepath.Join(dir, "key.pub")
-	data, _ := json.Marshal(seed{SeedID: uuid.NewString(), Release: "4.22.18", ClusterName: "seed", BaseDomain: "apps.example.test", IP: "10.252.0.2"})
+	data, _ := json.Marshal(seed{SeedID: uuid.NewString(), Release: "4.22.18", ClusterName: "seed", BaseDomain: "apps.example.test", IP: "10.252.0.2", DiskSize: "50Gi"})
 	if err := os.WriteFile(meta, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -54,6 +54,9 @@ func TestProofRenderingStaysUnqualifiedAndNeverOverwritesAnEstablishedIdentity(t
 	var allocation provision.Allocation
 	if err = json.Unmarshal(original, &allocation); err != nil {
 		t.Fatal(err)
+	}
+	if allocation.Image.DiskSize != "50Gi" {
+		t.Fatalf("lost compact source capacity: %s", allocation.Image.DiskSize)
 	}
 	if allocation.Image.Qualified {
 		t.Fatal("candidate proof promoted an image")
