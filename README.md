@@ -69,8 +69,11 @@ private source authentication is not configured.
 
 `config/cache.example.yaml` enables no images by default. Before enabling an
 image, prove that its powered-off disk is safe to clone and record its immutable
-Quay digest. Copy the policy and supply the digest, `500Gi` disk size, and the
+Quay digest. Copy the policy and supply the digest, `50Gi` seed disk size, and the
 read-only registry Secret name. Use one placement per worker storage pool.
+The cache must retain the compact source capacity; importing it into a 500 GiB
+PVC would restore the full-device copy cost. Provisioned guests can still use
+500 GiB roots, with partition and filesystem growth before specialization.
 Nodes matching multiple placements are rejected. Only amd64 nodes matching the
 configured worker selectors participate. Cordoned, unready, or untolerated nodes
 remain pending in coverage.
