@@ -100,8 +100,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          # Tekton run sno-vm-operator-build-76bcb; source 1f3ee55c015a22daceb0d4e7a00b3151fa7d4e70.
-          image: quay.io/klape/sno-vm-operator@sha256:de69de2e498d9faa9713e966f17d0690a3ddd5bce2cbe42888bf5da2c58f7311
+          # Tekton run sno-vm-operator-build-xtgh5; source 0143eb2fa0b23fb05eef051cba8c1b7f95b8f7c3.
+          image: quay.io/klape/sno-vm-operator@sha256:fc9543451b6c0aaed210be89d214fb68f8d66e404830fe3a81c256ea7e8dab22
           args: [--config=/etc/sno-operator/config.yaml]
           securityContext:
             allowPrivilegeEscalation: false
