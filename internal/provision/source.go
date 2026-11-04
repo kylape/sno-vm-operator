@@ -9,6 +9,7 @@ import (
 
 	"github.com/kylape/sno-vm-operator/internal/cache"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -22,6 +23,20 @@ func (r Allocator) SelectSource(ctx context.Context, profile string) (cache.Imag
 	isDefault := profile == "" || profile == "default"
 	if isDefault {
 		profile = r.Config.Instances.DefaultImage
+	}
+	for _, candidate := range r.Config.Instances.PreloadedImages {
+		if candidate.Name != profile {
+			continue
+		}
+		image = cache.Image{Name: candidate.Name, Reference: candidate.Reference, Architecture: candidate.Architecture, DiskSize: candidate.DiskSize, Qualified: candidate.Qualified, SeedID: candidate.SeedID, SourceCAHash: candidate.SourceCAHash}
+		if !image.Qualified {
+			return image, cache.Entry{}, fmt.Errorf("requested preloaded image profile is not qualified")
+		}
+		entry := cache.Entry{Namespace: candidate.Namespace, Node: candidate.Node, Image: candidate.Reference, StorageClass: candidate.StorageClass, SourcePVC: candidate.PVC, SourcePVCUID: candidate.PVCUID, Phase: "Ready"}
+		if err := r.preloadedSourceReady(ctx, image, entry); err != nil {
+			return image, cache.Entry{}, fmt.Errorf("preloaded image source is unavailable: %w", err)
+		}
+		return image, entry, nil
 	}
 	for _, candidate := range r.Config.Images {
 		if candidate.Name == profile {
@@ -69,13 +84,30 @@ func (r Allocator) SelectSource(ctx context.Context, profile string) (cache.Imag
 	})
 	for _, entry := range candidates {
 		if r.sourceReady(ctx, image, entry) == nil {
+			pvc := &corev1.PersistentVolumeClaim{}
+			if err := r.Client.Get(ctx, types.NamespacedName{Namespace: r.Config.Namespace, Name: entry.SourcePVC}, pvc); err != nil {
+				continue
+			}
+			entry.Namespace = r.Config.Namespace
+			entry.SourcePVCUID = string(pvc.UID)
 			return image, entry, nil
 		}
 	}
 	return image, cache.Entry{}, fmt.Errorf("no verified local cache source is currently usable")
 }
 
+func (r Allocator) allocationSourceReady(ctx context.Context, a Allocation) error {
+	entry := cache.Entry{Namespace: a.SourceNamespace, Node: a.Node, Image: a.Image.Reference, StorageClass: a.StorageClass, SourcePVC: a.SourcePVC, SourcePVCUID: a.SourcePVCUID, Phase: "Ready"}
+	if entry.Namespace != "" && entry.Namespace != r.Config.Namespace {
+		return r.preloadedSourceReady(ctx, a.Image, entry)
+	}
+	return r.sourceReady(ctx, a.Image, entry)
+}
+
 func (r Allocator) sourceReady(ctx context.Context, image cache.Image, entry cache.Entry) error {
+	if entry.Namespace != "" && entry.Namespace != r.Config.Namespace {
+		return r.preloadedSourceReady(ctx, image, entry)
+	}
 	node := &corev1.Node{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: entry.Node}, node); err != nil {
 		return err
@@ -126,7 +158,7 @@ func (r Allocator) sourceReady(ctx context.Context, image cache.Image, entry cac
 			owned = true
 		}
 	}
-	if !owned || pvc.DeletionTimestamp != nil || pvc.Status.Phase != corev1.ClaimBound || pvc.Spec.VolumeName == "" || pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName != entry.StorageClass || pvc.Spec.VolumeMode == nil || *pvc.Spec.VolumeMode != corev1.PersistentVolumeBlock {
+	if !owned || (entry.SourcePVCUID != "" && string(pvc.UID) != entry.SourcePVCUID) || pvc.DeletionTimestamp != nil || pvc.Status.Phase != corev1.ClaimBound || pvc.Spec.VolumeName == "" || pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName != entry.StorageClass || pvc.Spec.VolumeMode == nil || *pvc.Spec.VolumeMode != corev1.PersistentVolumeBlock {
 		return fmt.Errorf("source PVC is not owned and bound as expected")
 	}
 	requested := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
@@ -140,6 +172,76 @@ func (r Allocator) sourceReady(ctx context.Context, image cache.Image, entry cac
 	}
 	if pv.Spec.ClaimRef == nil || pv.Spec.ClaimRef.UID != pvc.UID || pv.Spec.ClaimRef.Name != pvc.Name || pv.Spec.ClaimRef.Namespace != pvc.Namespace || !cache.PinnedToNode(pv, entry.Node) {
 		return fmt.Errorf("source PV does not confirm local PVC ownership")
+	}
+	return nil
+}
+
+func (r Allocator) preloadedSourceReady(ctx context.Context, image cache.Image, entry cache.Entry) error {
+	node := &corev1.Node{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: entry.Node}, node); err != nil {
+		return err
+	}
+	if node.Spec.Unschedulable || node.DeletionTimestamp != nil || node.Labels[corev1.LabelArchStable] != image.Architecture {
+		return fmt.Errorf("preloaded seed node is not eligible")
+	}
+	ready := false
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+			ready = true
+		}
+	}
+	if !ready {
+		return fmt.Errorf("preloaded seed node is not Ready")
+	}
+	for _, taint := range node.Spec.Taints {
+		if taint.Effect == corev1.TaintEffectNoSchedule || taint.Effect == corev1.TaintEffectNoExecute {
+			return fmt.Errorf("preloaded seed node requires VM scheduling tolerations")
+		}
+	}
+	storage := &storagev1.StorageClass{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: entry.StorageClass}, storage); err != nil {
+		return err
+	}
+	if storage.Provisioner != "topolvm.io" || storage.VolumeBindingMode == nil || *storage.VolumeBindingMode != storagev1.VolumeBindingWaitForFirstConsumer {
+		return fmt.Errorf("preloaded seed storage class must use TopoLVM with WaitForFirstConsumer")
+	}
+	dv := &unstructured.Unstructured{}
+	dv.SetGroupVersionKind(cache.DataVolumeGVK)
+	key := types.NamespacedName{Namespace: entry.Namespace, Name: entry.SourcePVC}
+	if err := r.Client.Get(ctx, key, dv); err != nil {
+		return err
+	}
+	if dv.GetLabels()[cache.LabelPrefix+"candidate-proof"] != "true" {
+		return fmt.Errorf("preloaded seed DataVolume is not marked as a candidate proof")
+	}
+	phase, _, _ := unstructured.NestedString(dv.Object, "status", "phase")
+	if phase != "Succeeded" || dv.GetDeletionTimestamp() != nil {
+		return fmt.Errorf("preloaded seed DataVolume has not succeeded")
+	}
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := r.Client.Get(ctx, key, pvc); err != nil {
+		return err
+	}
+	owned := false
+	for _, ref := range pvc.OwnerReferences {
+		if ref.Kind == "DataVolume" && ref.Name == dv.GetName() && ref.UID == dv.GetUID() && ref.UID != "" {
+			owned = true
+		}
+	}
+	if !owned || (entry.SourcePVCUID != "" && string(pvc.UID) != entry.SourcePVCUID) || pvc.DeletionTimestamp != nil || pvc.Status.Phase != corev1.ClaimBound || pvc.Spec.VolumeName == "" || pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName != entry.StorageClass || pvc.Spec.VolumeMode == nil || *pvc.Spec.VolumeMode != corev1.PersistentVolumeBlock {
+		return fmt.Errorf("preloaded seed PVC is not owned, bound, block mode, and on its declared storage class")
+	}
+	requested := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	minimum, err := resource.ParseQuantity(image.DiskSize)
+	if err != nil || requested.Cmp(minimum) < 0 {
+		return fmt.Errorf("preloaded seed PVC capacity is insufficient")
+	}
+	pv := &corev1.PersistentVolume{}
+	if err = r.Client.Get(ctx, types.NamespacedName{Name: pvc.Spec.VolumeName}, pv); err != nil {
+		return err
+	}
+	if pv.Spec.ClaimRef == nil || pv.Spec.ClaimRef.UID != pvc.UID || pv.Spec.ClaimRef.Name != pvc.Name || pv.Spec.ClaimRef.Namespace != pvc.Namespace || !cache.PinnedToNode(pv, entry.Node) {
+		return fmt.Errorf("preloaded seed PV does not confirm the declared local node")
 	}
 	return nil
 }

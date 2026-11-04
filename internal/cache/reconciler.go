@@ -20,10 +20,12 @@ import (
 const StatusName = "sno-seed-cache-status"
 
 type Entry struct {
+	Namespace    string      `json:"namespace,omitempty"`
 	Node         string      `json:"node"`
 	Image        string      `json:"image"`
 	StorageClass string      `json:"storageClass"`
 	SourcePVC    string      `json:"sourcePVC"`
+	SourcePVCUID string      `json:"sourcePVCUID,omitempty"`
 	Phase        string      `json:"phase"`
 	Message      string      `json:"message,omitempty"`
 	Attempts     int         `json:"attempts"`
@@ -154,6 +156,7 @@ func (r *Reconciler) Sync(ctx context.Context) error {
 			key := Key(node.Name, *p, image)
 			e := state.Entries[key]
 			e.Node = node.Name
+			e.Namespace = r.Config.Namespace
 			e.Image = image.Reference
 			e.StorageClass = p.StorageClass
 			e.SourcePVC = key

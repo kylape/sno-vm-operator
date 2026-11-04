@@ -35,12 +35,32 @@ type Config struct {
 }
 
 type InstancePolicy struct {
-	Enabled            bool   `json:"enabled"`
-	DefaultImage       string `json:"defaultImage,omitempty"`
-	BaseDomain         string `json:"baseDomain,omitempty"`
-	MachinePool        string `json:"machinePool,omitempty"`
-	GuestPullSecret    string `json:"guestPullSecret,omitempty"`
-	SSHPublicKeySecret string `json:"sshPublicKeySecret,omitempty"`
+	Enabled                  bool             `json:"enabled"`
+	DefaultImage             string           `json:"defaultImage,omitempty"`
+	BaseDomain               string           `json:"baseDomain,omitempty"`
+	MachinePool              string           `json:"machinePool,omitempty"`
+	GuestPullSecret          string           `json:"guestPullSecret,omitempty"`
+	GuestPullSecretNamespace string           `json:"guestPullSecretNamespace,omitempty"`
+	SSHPublicKeySecret       string           `json:"sshPublicKeySecret,omitempty"`
+	PreloadedImages          []PreloadedImage `json:"preloadedImages,omitempty"`
+}
+
+// PreloadedImage registers an administrator-validated local seed PVC for a
+// development or recovery run. Normal operation imports pinned images from the
+// registry into the per-node cache instead.
+type PreloadedImage struct {
+	Name         string `json:"name"`
+	Reference    string `json:"reference"`
+	Architecture string `json:"architecture"`
+	DiskSize     string `json:"diskSize"`
+	Namespace    string `json:"namespace"`
+	PVC          string `json:"pvc"`
+	PVCUID       string `json:"pvcUID"`
+	Node         string `json:"node"`
+	StorageClass string `json:"storageClass"`
+	Qualified    bool   `json:"qualified,omitempty"`
+	SeedID       string `json:"seedID,omitempty"`
+	SourceCAHash string `json:"sourceCAHash,omitempty"`
 }
 
 type Placement struct {
@@ -126,7 +146,55 @@ func (c Config) Validate() error {
 			}
 		}
 	}
+	for _, i := range c.Instances.PreloadedImages {
+		if len(validation.IsDNS1123Label(i.Name)) > 0 || names[i.Name] {
+			return fmt.Errorf("invalid or duplicate preloaded image name %q", i.Name)
+		}
+		names[i.Name] = true
+		if !pinnedImage.MatchString(i.Reference) || i.Architecture != "amd64" {
+			return fmt.Errorf("preloaded image %s requires a pinned amd64 image reference", i.Name)
+		}
+		if disk, err := resource.ParseQuantity(i.DiskSize); err != nil || disk.Sign() <= 0 {
+			return fmt.Errorf("preloaded image %s has invalid disk size", i.Name)
+		}
+		for field, value := range map[string]string{"namespace": i.Namespace, "PVC": i.PVC, "node": i.Node, "storage class": i.StorageClass} {
+			if len(validation.IsDNS1123Subdomain(value)) > 0 {
+				return fmt.Errorf("preloaded image %s has invalid %s", i.Name, field)
+			}
+		}
+		if i.Qualified {
+			if _, err := uuid.Parse(i.PVCUID); err != nil {
+				return fmt.Errorf("preloaded image %s: qualified seed requires the source PVC UID", i.Name)
+			}
+			if id, err := uuid.Parse(i.SeedID); err != nil || id.String() != i.SeedID {
+				return fmt.Errorf("preloaded image %s: qualified seed requires a canonical seedID", i.Name)
+			}
+			if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(i.SourceCAHash) {
+				return fmt.Errorf("preloaded image %s: qualified seed requires source CA bundle hash", i.Name)
+			}
+		}
+	}
 	if c.Instances.Enabled {
+		if c.Instances.DefaultImage == "" {
+			return fmt.Errorf("instances.defaultImage is required when instance provisioning is enabled")
+		}
+		defaultFound := false
+		for _, image := range c.Images {
+			if image.Name == c.Instances.DefaultImage && image.Qualified {
+				defaultFound = true
+			}
+		}
+		for _, image := range c.Instances.PreloadedImages {
+			if image.Name == c.Instances.DefaultImage && image.Qualified {
+				defaultFound = true
+			}
+		}
+		if !defaultFound {
+			return fmt.Errorf("instances.defaultImage must name a qualified image")
+		}
+		if errs := validation.IsDNS1123Subdomain(c.Instances.BaseDomain); len(errs) > 0 {
+			return fmt.Errorf("invalid instance baseDomain: %v", errs)
+		}
 		for _, label := range regexp.MustCompile(`\.`).Split(c.Instances.BaseDomain, -1) {
 			if len(validation.IsDNS1123Label(label)) > 0 {
 				return fmt.Errorf("invalid instance baseDomain")
@@ -141,10 +209,14 @@ func (c Config) Validate() error {
 				return fmt.Errorf("machinePool overlaps a protected host or guest network")
 			}
 		}
-		for _, name := range []string{c.Instances.GuestPullSecret, c.Instances.SSHPublicKeySecret} {
-			if len(validation.IsDNS1123Subdomain(name)) > 0 {
-				return fmt.Errorf("instance credential Secret names are required")
-			}
+		if c.Instances.GuestPullSecretNamespace != "" && len(validation.IsDNS1123Subdomain(c.Instances.GuestPullSecretNamespace)) > 0 {
+			return fmt.Errorf("invalid instance guestPullSecretNamespace")
+		}
+		if len(validation.IsDNS1123Subdomain(c.Instances.GuestPullSecret)) > 0 {
+			return fmt.Errorf("instance guestPullSecret is required")
+		}
+		if c.Instances.SSHPublicKeySecret != "" && len(validation.IsDNS1123Subdomain(c.Instances.SSHPublicKeySecret)) > 0 {
+			return fmt.Errorf("invalid instance sshPublicKeySecret")
 		}
 	}
 	return nil

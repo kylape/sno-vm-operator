@@ -97,6 +97,42 @@ func TestConfigurationRequiresPinsAndExplicitPlacement(t *testing.T) {
 	}
 }
 
+func TestInstancePolicyRequiresQualifiedDefaultProfile(t *testing.T) {
+	c := policy()
+	c.Instances = InstancePolicy{Enabled: true, DefaultImage: c.Images[0].Name, BaseDomain: "apps.example.test", MachinePool: "10.252.0.0/16", GuestPullSecret: "guest-pull", SSHPublicKeySecret: "guest-ssh"}
+	c.Images[0].Qualified = true
+	c.Images[0].SeedID = "627d4b39-092a-4a47-99a2-2f28880b9e41"
+	c.Images[0].SourceCAHash = strings.Repeat("d", 64)
+	if err := c.Validate(); err != nil {
+		t.Fatalf("qualified default image rejected: %v", err)
+	}
+	c.Images[0].Qualified = false
+	if err := c.Validate(); err == nil {
+		t.Fatal("enabled instance policy accepted an unqualified default image")
+	}
+}
+
+func TestPreloadedSeedPolicyPinsItsSourcePVCIdentity(t *testing.T) {
+	c := policy()
+	c.Images = nil
+	c.Instances = InstancePolicy{
+		Enabled: true, DefaultImage: "compact-dev", BaseDomain: "apps.example.test", MachinePool: "10.252.0.0/16",
+		GuestPullSecret: "guest-pull", PreloadedImages: []PreloadedImage{{
+			Name: "compact-dev", Reference: "quay.io/klape/sno-vm-image@sha256:" + strings.Repeat("c", 64),
+			Architecture: "amd64", DiskSize: "50Gi", Namespace: "sno-seed-build", PVC: "sno-seed-compact50",
+			PVCUID: "1e07e941-9630-4a0c-95f9-ad757852ebd5", Node: "a100-01", StorageClass: "lvms-a100-tier1-storage",
+			Qualified: true, SeedID: "627d4b39-092a-4a47-99a2-2f28880b9e41", SourceCAHash: strings.Repeat("d", 64),
+		}},
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("valid preloaded seed policy rejected: %v", err)
+	}
+	c.Instances.PreloadedImages[0].PVCUID = ""
+	if err := c.Validate(); err == nil {
+		t.Fatal("preloaded seed without a pinned source PVC UID was accepted")
+	}
+}
+
 func TestConcurrencyAndArchitectureSurviveRestart(t *testing.T) {
 	r := setup(t, node("n1", "amd64"), node("n2", "amd64"), node("arm", "arm64"))
 	s := syncOK(t, r)

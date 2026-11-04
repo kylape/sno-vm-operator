@@ -10,18 +10,18 @@ are maintained separately.
 
 The deployed implementation is the **per-node seed cache controller** and
 operator image build pipeline, with no seed images enabled. Source now includes
-the immutable `SNOVirtualMachine` API/CRD, durable identity/address allocations,
-local disk/VM/API resource builders, and independent bootstrap credentials.
-These are tested provisioning components; the complete instance reconciler,
-readiness handoff, and storage finalizer are not yet wired into the manager.
-`instances.enabled: true` is rejected explicitly in this build.
+the `SNOVirtualMachine` reconciliation path: durable allocations, local disk
+cloning, VM and API Route creation, guest identity/readiness checks, kubeconfig
+publication, and deletion cleanup. The API group is `sno.llm-d.io`. The new
+path still needs a cluster build and end-to-end qualification; do not enable it
+until an image profile is qualified and configured.
 
 The disposable reference SNO is installed and healthy, with verified external
 API TLS/readiness and an internally reachable application route. The
 [LWE SNO adapter](https://github.com/kylape/llm-workload-environment-operator/pull/1)
-is implemented in a draft PR. Seed capture, two-clone recert identity isolation,
-per-node cache qualification, and complete provider integration remain to be
-validated. No five-minute startup result is claimed.
+is implemented in a draft PR. Seed capture, per-node cache qualification, and
+complete provider integration remain to be validated. No five-minute startup
+result is claimed.
 
 The host currently uses TopoLVM without snapshot classes; CDI selects `copy`.
 A cached seed avoids registry downloads but still requires a measured clone
@@ -34,6 +34,11 @@ Go 1.26 is required. Run `make test` and `make build`. The controller starts wit
 `bin/manager --config=config/cache.example.yaml` and an ordinary kubeconfig or
 in-cluster service account. Running the controller creates Kubernetes resources;
 use an approved target cluster. The image is Linux amd64 initially.
+
+`kubectl kustomize config` renders the CRD, runtime RBAC, Deployment, and cache
+policy together. A cluster administrator must install the CRD initially. The
+development identity can update the named CRD after creation but cannot create
+CRDs.
 
 The cache controller polls every 15 seconds under leader election. Restart after
 editing policy; configuration is loaded at startup. It does not expose a
@@ -77,6 +82,13 @@ PVC would restore the full-device copy cost. Provisioned guests can still use
 Nodes matching multiple placements are rejected. Only amd64 nodes matching the
 configured worker selectors participate. Cordoned, unready, or untolerated nodes
 remain pending in coverage.
+
+For a single administrator-run development test, `instances.preloadedImages`
+can reference an already validated candidate PVC by namespace, name, UID, node,
+and storage class. The operator checks the CDI/PVC/PV ownership, block mode,
+capacity, and node locality before cloning it. This path bypasses registry
+import and is intended for controlled candidate testing; production policy
+should use digest-pinned `images` and the per-node cache.
 
 For CDI `pullMethod: pod`, `seed-registry-read` is an Opaque Secret in
 `sno-vm-system` with `accessKeyId` (Quay robot username) and `secretKey` (robot
@@ -128,5 +140,7 @@ healthy under its service account with `images: []`; no cache imports or guest
 VMs are enabled. Provisioning unit tests additionally check durable unique
 identities, retry/exhaustion behavior, local source placement, minimum root
 capacity, TLS passthrough, independent SSH host/client keys, password hashes,
-and separation of management private keys from guest configuration media.
+and separation of management private keys from guest configuration media. The
+instance reconciler still requires cluster validation before enabling; the
+compact seed remains unqualified.
 See [build provenance](docs/build-provenance.md).
