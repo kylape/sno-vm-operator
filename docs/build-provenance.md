@@ -9,11 +9,12 @@ in `sno-vm-build`; the operator image repository is public.
 | `sno-vm-operator-build-jrbj5` | `f82d5e75fd8c9c60fe1fb04274fbe7ebadb27cf4` | `sha256:e14816ba6984908bdbfb7aeeb62a6385e98ff15933c008abec5c899310e7c36c` |
 | `sno-vm-operator-build-20d708f` | `20d708f17889d62a5201ca51dd0b2d258ada0026` | `sha256:4986805b5050c10a43c6b97a16a0deb058392f43b4a03706874fafa9b6f12665` |
 | `sno-vm-operator-build-mmq9h` | `9950fe27df07f1f246df0a1dad587f9317bef0b1` | `sha256:43a92d5e567bd8da14fb8180278ea0f621ab77fb5c4bec7dab9562efa4fcb6ae` |
+| `sno-vm-operator-build-76bcb` | `1f3ee55c015a22daceb0d4e7a00b3151fa7d4e70` | `sha256:de69de2e498d9faa9713e966f17d0690a3ddd5bce2cbe42888bf5da2c58f7311` |
 
 ## Current deployed build
 
 The latest run completed both verify and publish tasks successfully. Its tag is
-`quay.io/klape/sno-vm-operator:git-9950fe2`; the runtime Deployment
+`quay.io/klape/sno-vm-operator:git-1f3ee55c`; the runtime Deployment
 `sno-vm-system/sno-vm-operator` was updated to the recorded digest and reports one
 available replica. The manifest pins the same digest.
 
@@ -24,16 +25,18 @@ credentials, mounted only in that task. The build used worker LVM storage on
 `a100-01`.
 
 The current image includes the SNO instance reconciler, Docker config Secret
-conversion for CDI registry imports, and source validation that resolves the
-same converted CDI Secret reference used by the cache controller. The Tekton
-verification task passed `go test -race ./...`, `go vet ./...`, and the static
-Linux amd64 build.
+conversion for CDI registry imports, source validation that resolves the same
+converted CDI Secret reference used by the cache controller, and validation of
+the separate guest SSH client and host key pairs. The Tekton verification task
+passed `go test -race ./...`, `go vet ./...`, and the static Linux amd64 build.
 
-The direct smoke-test CR `sno-vm-system/sno-direct-smoke-20261104` is waiting for
-the operator runtime ClusterRole to include `update` on
-`snovirtualmachines/finalizers`. This is required for its `blockOwnerDeletion`
-owner references. The seed image is imported and Ready; the guest has not yet
-started.
+The direct smoke-test CR `sno-vm-system/sno-direct-smoke-20261104` is being
+provisioned against the imported `compact50-dev` seed. The seed cache is Ready.
+Its root PVC uses WaitForFirstConsumer and remains pending until a consumer is
+scheduled on the allocated worker. A short-lived binder Pod is being added to
+the instance reconciler to resolve that dependency before CDI clones the 50 GiB
+seed into the requested 500 GiB guest root. Guest boot and readiness have not
+yet been confirmed.
 
 The disposable reference guest has separately passed API, node, operator,
 internal application route, and cached-engine checks. That does not qualify

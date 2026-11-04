@@ -165,6 +165,13 @@ func (r *InstanceReconciler) syncOne(ctx context.Context, request *api.SNOVirtua
 		return r.reportError(ctx, request, "Failed", "RootVolumeCollision", err)
 	}
 	root = rootResult.(*unstructured.Unstructured)
+	rootBound, err := r.ensureRootVolumeBound(ctx, request, a, root)
+	if err != nil {
+		return r.reportError(ctx, request, "Reconciling", "RootVolumeUnavailable", err)
+	}
+	if !rootBound {
+		return r.report(ctx, request, "Provisioning", "Ready", metav1.ConditionFalse, "RootVolumePending", "Waiting for the root PVC to bind on the allocated worker", "")
+	}
 	rootPhase, _, _ := unstructured.NestedString(root.Object, "status", "phase")
 	if rootPhase != "Succeeded" {
 		return r.report(ctx, request, "Provisioning", "Ready", metav1.ConditionFalse, "RootVolumePending", "Waiting for CDI to finish the local seed clone", "")
@@ -407,6 +414,9 @@ func (r *InstanceReconciler) cleanup(ctx context.Context, request *api.SNOVirtua
 		return err
 	}
 	if err = r.waitForGone(ctx, request.Namespace, VirtualMachineInstanceGVK, request.Name); err != nil {
+		return err
+	}
+	if err = r.deleteNamedOwned(ctx, request, &corev1.Pod{}, request.Name+"-root-bind"); err != nil {
 		return err
 	}
 	if request.Spec.RootDiskRetentionPolicy == "Retain" {
