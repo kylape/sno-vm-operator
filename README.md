@@ -45,10 +45,11 @@ kubectl apply -f config/crd.yaml
 kubectl apply -f config/rbac/operator-runtime.yaml
 ```
 
-The runtime role lets the operator manage its `SNOVirtualMachine` requests and
-the VM, CDI, Route, Service, PVC, and Secret resources needed for guest
-provisioning. It is cluster-bound so LWE requests can run in their backing
-namespaces.
+The runtime ClusterRole covers `SNOVirtualMachine`, VM, CDI, Route, Service,
+and PVC operations across request namespaces. Secret access is in a separate
+Role bound only in `sno-vm-system`, which is enough for a direct request there.
+LWE requests in `env-*` namespaces will need a namespace-scoped Secret Role and
+RoleBinding in each backing namespace before that integration is enabled.
 
 The cache controller polls every 15 seconds under leader election. Restart after
 editing policy; configuration is loaded at startup. It does not expose a
