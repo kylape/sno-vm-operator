@@ -11,10 +11,10 @@ are maintained separately.
 The operator now includes the `sno.llm-d.io/v1alpha1` `SNOVirtualMachine`
 reconciliation path: durable allocations, local disk cloning, KubeVirt VM and
 API Route creation, guest identity/readiness checks, kubeconfig publication,
-and deletion cleanup. That implementation is built and deployed on the
-development cluster. A cluster administrator must still install the API and
-runtime RBAC before requests can create VMs; no guest has been launched by this
-operator yet.
+and deletion cleanup. The code is built and deployed; the first direct test
+created the guest VM and completed the root clone. OpenShift currently rejects
+the API Route because the runtime ClusterRole lacks `routes/custom-host`
+permission. Guest API and bootstrap readiness are not yet confirmed.
 
 The disposable reference SNO is installed and healthy, with verified external
 API TLS/readiness and an internally reachable application route. The LWE SNO
@@ -46,10 +46,12 @@ kubectl apply -f config/rbac/operator-runtime.yaml
 ```
 
 The runtime ClusterRole covers `SNOVirtualMachine`, VM, CDI, Route, Service,
-and PVC operations across request namespaces. Secret access is in a separate
-Role bound only in `sno-vm-system`, which is enough for a direct request there.
-LWE requests in `env-*` namespaces will need a namespace-scoped Secret Role and
-RoleBinding in each backing namespace before that integration is enabled.
+and PVC operations across request namespaces. Setting the custom API Route
+hostname also requires `create` on the `routes/custom-host` subresource. Secret
+access is in a separate Role bound only in `sno-vm-system`, which is enough for
+a direct request there. LWE requests in `env-*` namespaces will need a
+namespace-scoped Secret Role and RoleBinding in each backing namespace before
+that integration is enabled.
 
 The cache controller polls every 15 seconds under leader election. Restart after
 editing policy; configuration is loaded at startup. It does not expose a
