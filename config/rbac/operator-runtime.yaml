@@ -20,6 +20,12 @@ rules:
       - update
       - patch
   - apiGroups:
+      - sno.llm-d.io
+    resources:
+      - snovirtualmachines/finalizers
+    verbs:
+      - update
+  - apiGroups:
       - kubevirt.io
     resources:
       - virtualmachines
