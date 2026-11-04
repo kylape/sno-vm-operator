@@ -314,13 +314,25 @@ func (r *InstanceReconciler) readPublicKeys(ctx context.Context, request *api.SN
 }
 
 func validateManagementKeypair(secret *corev1.Secret) error {
-	signer, err := ssh.ParsePrivateKey(secret.Data["ssh-privatekey"])
-	if err != nil {
-		return fmt.Errorf("management SSH identity is invalid")
+	var bootstrap BootstrapConfig
+	if json.Unmarshal(secret.Data["bootstrap-config.json"], &bootstrap) != nil || len(bootstrap.SSHAuthorizedKeys) == 0 {
+		return fmt.Errorf("management bootstrap key material is invalid")
 	}
-	public, _, _, _, err := ssh.ParseAuthorizedKey(secret.Data["ssh-host-publickey"])
-	if err != nil || string(ssh.MarshalAuthorizedKey(public)) != string(ssh.MarshalAuthorizedKey(signer.PublicKey())) {
-		return fmt.Errorf("management SSH host key does not match its private key")
+	clientSigner, err := ssh.ParsePrivateKey(secret.Data["ssh-privatekey"])
+	if err != nil {
+		return fmt.Errorf("management SSH client identity is invalid")
+	}
+	clientPublic, _, _, _, err := ssh.ParseAuthorizedKey([]byte(bootstrap.SSHAuthorizedKeys[0]))
+	if err != nil || string(ssh.MarshalAuthorizedKey(clientPublic)) != string(ssh.MarshalAuthorizedKey(clientSigner.PublicKey())) {
+		return fmt.Errorf("management SSH client key does not match the bootstrap authorized key")
+	}
+	hostSigner, err := ssh.ParsePrivateKey([]byte(bootstrap.SSHHostPrivateKey))
+	if err != nil {
+		return fmt.Errorf("bootstrap SSH host identity is invalid")
+	}
+	hostPublic, _, _, _, err := ssh.ParseAuthorizedKey(secret.Data["ssh-host-publickey"])
+	if err != nil || string(ssh.MarshalAuthorizedKey(hostPublic)) != string(ssh.MarshalAuthorizedKey(hostSigner.PublicKey())) {
+		return fmt.Errorf("management SSH host key does not match the bootstrap host key")
 	}
 	return nil
 }
