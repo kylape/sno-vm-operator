@@ -101,10 +101,15 @@ import and is intended for controlled candidate testing; production policy
 should use digest-pinned `images` and the per-node cache. Guest bootstrap also
 requires a separate guest-only pull Secret in the configured namespace.
 
-For CDI `pullMethod: pod`, `seed-registry-read` is an Opaque Secret in
-`sno-vm-system` with `accessKeyId` (Quay robot username) and `secretKey` (robot
-password). The operator only checks that these keys exist. CDI uses them for the
-import. RBAC permits reads of that Secret name only; adjust it if changing policy.
+For CDI `pullMethod: pod`, `registrySecret` names a Secret in `sno-vm-system`.
+It can use CDI's Opaque `accessKeyId`/`secretKey` username/password fields or a
+standard Docker config JSON (`.dockerconfigjson` or `config.json`). For Docker
+config JSON, the operator selects the credentials matching the image registry
+and creates an owned CDI-format Secret for the import. The source Secret remains
+unchanged. The same Docker config Secret can also be referenced by
+`instances.guestPullSecret` for guest bootstrap. Credentials must include pull
+access to the Quay seed repository; build push credentials serve a separate
+purpose.
 
 Render deployment resources with `kubectl kustomize config` and review before
 applying. The manifest pins the initial successful Tekton digest; replace it

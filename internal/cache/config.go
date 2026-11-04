@@ -74,7 +74,8 @@ type Image struct {
 	Reference    string `json:"reference"`
 	Architecture string `json:"architecture"`
 	DiskSize     string `json:"diskSize"`
-	// CDI pod-pull credentials: accessKeyId and secretKey in the cache namespace.
+	// Name of a cache-namespace Secret with registry credentials. Docker config
+	// JSON is accepted and normalized to CDI's accessKeyId/secretKey format.
 	RegistrySecret string `json:"registrySecret"`
 	// Qualification is an administrator decision after the two-clone proof.
 	Qualified    bool   `json:"qualified,omitempty"`

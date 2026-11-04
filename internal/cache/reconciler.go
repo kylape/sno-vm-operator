@@ -225,14 +225,17 @@ func (r *Reconciler) syncEntry(ctx context.Context, node corev1.Node, p Placemen
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: image.RegistrySecret, Namespace: r.Config.Namespace}, secret); err != nil {
 		return fmt.Errorf("registry credential Secret unavailable: %w", err)
 	}
-	if len(secret.Data["accessKeyId"]) == 0 || len(secret.Data["secretKey"]) == 0 {
-		return fmt.Errorf("CDI registry Secret requires accessKeyId and secretKey")
+	registrySecretName, err := r.ensureCDIRegistrySecret(ctx, secret, image.Reference)
+	if err != nil {
+		return err
 	}
-	expected := DataVolume(r.Config.Namespace, node.Name, p, image)
+	cdiImage := image
+	cdiImage.RegistrySecret = registrySecretName
+	expected := DataVolume(r.Config.Namespace, node.Name, p, cdiImage)
 	dv := &unstructured.Unstructured{}
 	dv.SetGroupVersionKind(DataVolumeGVK)
 	key := types.NamespacedName{Name: expected.GetName(), Namespace: r.Config.Namespace}
-	err := r.Client.Get(ctx, key, dv)
+	err = r.Client.Get(ctx, key, dv)
 	if apierrors.IsNotFound(err) {
 		// Never adopt or overwrite a pre-existing PVC without its DataVolume.
 		pvc := &corev1.PersistentVolumeClaim{}
