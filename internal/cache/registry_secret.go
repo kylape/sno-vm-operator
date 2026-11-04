@@ -32,24 +32,21 @@ type dockerRegistryAuth struct {
 // The source Secret remains untouched; CDI receives only the credential for
 // the registry referenced by this image.
 func (r *Reconciler) ensureCDIRegistrySecret(ctx context.Context, source *corev1.Secret, imageReference string) (string, error) {
-	if len(source.Data["accessKeyId"]) > 0 && len(source.Data["secretKey"]) > 0 {
-		return source.Name, nil
+	name, err := CDIRegistrySecretName(source, imageReference)
+	if err != nil {
+		return "", err
+	}
+	if name == source.Name {
+		return name, nil
 	}
 	configData := source.Data[corev1.DockerConfigJsonKey]
 	if len(configData) == 0 {
 		configData = source.Data["config.json"]
 	}
-	if len(configData) == 0 {
-		return "", fmt.Errorf("registry Secret %s must contain Docker config JSON or CDI accessKeyId/secretKey fields", source.Name)
-	}
 	username, password, err := dockerRegistryCredentials(configData, registryHost(imageReference))
 	if err != nil {
 		return "", err
 	}
-	if source.UID == "" {
-		return "", fmt.Errorf("registry Docker config Secret %s has no Kubernetes UID", source.Name)
-	}
-	name := cdiRegistrySecretName(source.UID, registryHost(imageReference))
 	controller := true
 	blockOwnerDeletion := false
 	expected := &corev1.Secret{
@@ -93,6 +90,30 @@ func (r *Reconciler) ensureCDIRegistrySecret(ctx context.Context, source *corev1
 		return "", err
 	}
 	return name, nil
+}
+
+// CDIRegistrySecretName returns the Secret reference that CDI uses for an
+// image's registry credentials. Docker config Secrets are converted to a
+// deterministic CDI Secret name based on the source Secret UID and registry.
+func CDIRegistrySecretName(source *corev1.Secret, imageReference string) (string, error) {
+	if len(source.Data["accessKeyId"]) > 0 && len(source.Data["secretKey"]) > 0 {
+		return source.Name, nil
+	}
+	configData := source.Data[corev1.DockerConfigJsonKey]
+	if len(configData) == 0 {
+		configData = source.Data["config.json"]
+	}
+	if len(configData) == 0 {
+		return "", fmt.Errorf("registry Secret %s must contain Docker config JSON or CDI accessKeyId/secretKey fields", source.Name)
+	}
+	host := registryHost(imageReference)
+	if _, _, err := dockerRegistryCredentials(configData, host); err != nil {
+		return "", err
+	}
+	if source.UID == "" {
+		return "", fmt.Errorf("registry Docker config Secret %s has no Kubernetes UID", source.Name)
+	}
+	return cdiRegistrySecretName(source.UID, host), nil
 }
 
 func dockerRegistryCredentials(configData []byte, host string) (string, string, error) {

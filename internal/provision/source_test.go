@@ -32,13 +32,14 @@ func readySource(t *testing.T) (Allocator, cache.Image, cache.Entry, *corev1.Con
 	dv.Object["status"] = map[string]interface{}{"phase": "Succeeded"}
 	mode := corev1.PersistentVolumeBlock
 	class := placement.StorageClass
+	registrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: image.RegistrySecret, Namespace: r.Config.Namespace, UID: types.UID(uuid.NewString())}, Data: map[string][]byte{"accessKeyId": []byte("reader"), "secretKey": []byte("token")}}
 	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: dv.GetName(), Namespace: r.Config.Namespace, UID: types.UID(uuid.NewString()), OwnerReferences: []metav1.OwnerReference{{APIVersion: cache.DataVolumeGVK.GroupVersion().String(), Kind: "DataVolume", Name: dv.GetName(), UID: dv.GetUID()}}}, Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &class, VolumeMode: &mode, VolumeName: "local-source", Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("500Gi")}}}, Status: corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimBound}}
 	pv := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvc.Spec.VolumeName}, Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Name: pvc.Name, Namespace: pvc.Namespace, UID: pvc.UID}, NodeAffinity: &corev1.VolumeNodeAffinity{Required: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{{MatchExpressions: []corev1.NodeSelectorRequirement{{Key: corev1.LabelHostname, Operator: corev1.NodeSelectorOpIn, Values: []string{node.Name}}}}}}}}}
 	entry := cache.Entry{Node: node.Name, Image: image.Reference, StorageClass: class, SourcePVC: pvc.Name, Phase: "Ready"}
 	state := cache.State{ObservedAt: metav1.Now(), Entries: map[string]cache.Entry{pvc.Name: entry}, Coverage: map[string]cache.Coverage{image.Name: {Eligible: 1, Ready: 1}}}
 	raw, _ := json.Marshal(state)
 	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cache.StatusName, Namespace: r.Config.Namespace, Labels: map[string]string{"app.kubernetes.io/managed-by": cache.ManagedBy}}, Data: map[string]string{"status.json": string(raw)}}
-	for _, object := range []interface{}{node, dv, pvc, pv, cm} {
+	for _, object := range []interface{}{node, dv, pvc, pv, cm, registrySecret} {
 		switch object := object.(type) {
 		case *corev1.Node:
 			if err := r.Client.Create(ctx, object); err != nil {
@@ -56,6 +57,10 @@ func readySource(t *testing.T) (Allocator, cache.Image, cache.Entry, *corev1.Con
 			if err := r.Client.Create(ctx, object); err != nil {
 				t.Fatal(err)
 			}
+		case *corev1.Secret:
+			if err := r.Client.Create(ctx, object); err != nil {
+				t.Fatal(err)
+			}
 		default:
 			if err := r.Client.Create(ctx, dv); err != nil {
 				t.Fatal(err)
@@ -64,6 +69,39 @@ func readySource(t *testing.T) (Allocator, cache.Image, cache.Entry, *corev1.Con
 	}
 	return r, image, entry, cm
 }
+
+func TestSourceSelectionUsesConvertedDockerConfigSecretReference(t *testing.T) {
+	r, image, entry, _ := readySource(t)
+	ctx := context.Background()
+	registrySecret := &corev1.Secret{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: r.Config.Namespace, Name: image.RegistrySecret}, registrySecret); err != nil {
+		t.Fatal(err)
+	}
+	registrySecret.Data = map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"registry.test":{"username":"reader","password":"token"}}}`)}
+	registrySecret.Type = corev1.SecretTypeDockerConfigJson
+	if err := r.Client.Update(ctx, registrySecret); err != nil {
+		t.Fatal(err)
+	}
+	cdiSecretName, err := cache.CDIRegistrySecretName(registrySecret, image.Reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dv := &unstructured.Unstructured{}
+	dv.SetGroupVersionKind(cache.DataVolumeGVK)
+	if err = r.Client.Get(ctx, types.NamespacedName{Namespace: r.Config.Namespace, Name: entry.SourcePVC}, dv); err != nil {
+		t.Fatal(err)
+	}
+	if err = unstructured.SetNestedField(dv.Object, cdiSecretName, "spec", "source", "registry", "secretRef"); err != nil {
+		t.Fatal(err)
+	}
+	if err = r.Client.Update(ctx, dv); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = r.SelectSource(ctx, "default"); err != nil {
+		t.Fatalf("usable source with converted Docker config Secret rejected: %v", err)
+	}
+}
+
 func makeHex(c byte, n int) []byte {
 	result := make([]byte, n)
 	for i := range result {

@@ -141,7 +141,17 @@ func (r Allocator) sourceReady(ctx context.Context, image cache.Image, entry cac
 	if err = r.Client.Get(ctx, key, dv); err != nil {
 		return err
 	}
-	if err = cache.ValidateExisting(dv, cache.DataVolume(r.Config.Namespace, node.Name, *placement, image)); err != nil {
+	registrySecret := &corev1.Secret{}
+	if err = r.Client.Get(ctx, types.NamespacedName{Namespace: r.Config.Namespace, Name: image.RegistrySecret}, registrySecret); err != nil {
+		return err
+	}
+	cdiSecretName, err := cache.CDIRegistrySecretName(registrySecret, image.Reference)
+	if err != nil {
+		return err
+	}
+	dataVolumeImage := image
+	dataVolumeImage.RegistrySecret = cdiSecretName
+	if err = cache.ValidateExisting(dv, cache.DataVolume(r.Config.Namespace, node.Name, *placement, dataVolumeImage)); err != nil {
 		return err
 	}
 	phase, _, _ := unstructured.NestedString(dv.Object, "status", "phase")
