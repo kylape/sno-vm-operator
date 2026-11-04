@@ -1,0 +1,45 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sno-vm-instance-manager
+rules:
+  - apiGroups: [sno.llm-d.io]
+    resources: [snovirtualmachines]
+    verbs: [get, list, update]
+  - apiGroups: [sno.llm-d.io]
+    resources: [snovirtualmachines/status]
+    verbs: [get, update, patch]
+  - apiGroups: [kubevirt.io]
+    resources: [virtualmachines]
+    verbs: [create, get, delete]
+  - apiGroups: [kubevirt.io]
+    resources: [virtualmachineinstances]
+    verbs: [get]
+  - apiGroups: [cdi.kubevirt.io]
+    resources: [datavolumes]
+    verbs: [create, get, update, delete]
+  - apiGroups: [route.openshift.io]
+    resources: [routes]
+    verbs: [create, get, delete]
+  - apiGroups: ['']
+    resources: [services]
+    verbs: [create, get, delete]
+  - apiGroups: ['']
+    resources: [persistentvolumeclaims]
+    verbs: [get]
+  - apiGroups: ['']
+    resources: [secrets]
+    verbs: [create, get, update, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sno-vm-instance-manager
+subjects:
+  - kind: ServiceAccount
+    name: sno-vm-operator
+    namespace: sno-vm-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sno-vm-instance-manager

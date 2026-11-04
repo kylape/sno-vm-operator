@@ -4,6 +4,7 @@ namespace: sno-vm-system
 resources:
   - crd.yaml
   - manager.yaml
+  - rbac/operator-runtime.yaml
 configMapGenerator:
   - name: sno-vm-cache-policy
     files:
