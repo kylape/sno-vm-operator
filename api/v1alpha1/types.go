@@ -20,10 +20,11 @@ type Resources struct {
 	Cores    int32  `json:"cores,omitempty"`
 	Memory   string `json:"memory,omitempty"`
 	RootDisk string `json:"rootDisk,omitempty"`
+	DataDisk string `json:"dataDisk,omitempty"`
 }
 
-// Spec is immutable. Established identity and root storage must never change
-// during retries, profile rollout, or a controller restart.
+// Spec is immutable. Established identity and storage must never change during
+// retries, profile rollout, or a controller restart.
 type SNOVirtualMachineSpec struct {
 	ImageProfile            string                       `json:"imageProfile,omitempty"`
 	ClusterName             string                       `json:"clusterName,omitempty"`

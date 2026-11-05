@@ -43,7 +43,10 @@ func Hardware(request *api.SNOVirtualMachine, a Allocation) (api.Resources, erro
 		result.Memory = "128Gi"
 	}
 	if result.RootDisk == "" {
-		result.RootDisk = "500Gi"
+		result.RootDisk = "200Gi"
+	}
+	if result.DataDisk == "" {
+		result.DataDisk = "300Gi"
 	}
 	memory, err := resource.ParseQuantity(result.Memory)
 	if err != nil || memory.Cmp(resource.MustParse("16Gi")) < 0 || result.Cores < 8 {
@@ -53,6 +56,10 @@ func Hardware(request *api.SNOVirtualMachine, a Allocation) (api.Resources, erro
 	source, sourceErr := resource.ParseQuantity(a.Image.DiskSize)
 	if err != nil || sourceErr != nil || source.Sign() <= 0 || disk.Cmp(source) < 0 {
 		return result, fmt.Errorf("root disk must be at least the source virtual disk size")
+	}
+	dataDisk, err := resource.ParseQuantity(result.DataDisk)
+	if err != nil || dataDisk.Sign() <= 0 {
+		return result, fmt.Errorf("data disk must be a positive storage quantity")
 	}
 	return result, nil
 }
@@ -76,6 +83,31 @@ func RootVolume(request *api.SNOVirtualMachine, a Allocation, cacheNamespace str
 	return stamp(object, request, request.Name+"-root"), nil
 }
 
+// WorkloadVolume creates a dedicated blank block device for storage inside the
+// guest. Its WFFC claim follows the VM's node placement, while the root PVC
+// remains reserved for the operating system and container image cache.
+func WorkloadVolume(request *api.SNOVirtualMachine, a Allocation) (*corev1.PersistentVolumeClaim, error) {
+	hardware, err := Hardware(request, a)
+	if err != nil {
+		return nil, err
+	}
+	if a.Node == "" || a.StorageClass == "" {
+		return nil, fmt.Errorf("workload disk placement is incomplete")
+	}
+	volumeMode := corev1.PersistentVolumeBlock
+	return &corev1.PersistentVolumeClaim{
+		ObjectMeta: metadata(request, request.Name+"-data"),
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			StorageClassName: &a.StorageClass,
+			VolumeMode:       &volumeMode,
+			Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{
+				corev1.ResourceStorage: resource.MustParse(hardware.DataDisk),
+			}},
+		},
+	}, nil
+}
+
 func VirtualMachine(request *api.SNOVirtualMachine, a Allocation) (*unstructured.Unstructured, error) {
 	hardware, err := Hardware(request, a)
 	if err != nil {
@@ -95,12 +127,12 @@ func VirtualMachine(request *api.SNOVirtualMachine, a Allocation) (*unstructured
 				"resources": map[string]interface{}{"requests": map[string]interface{}{"cpu": strconv.Itoa(int(hardware.Cores)), "memory": hardware.Memory}},
 				"devices": map[string]interface{}{
 					"rng":        map[string]interface{}{},
-					"disks":      []interface{}{map[string]interface{}{"name": "root", "disk": map[string]interface{}{"bus": "virtio"}, "bootOrder": int64(1)}, map[string]interface{}{"name": "bootstrap", "cdrom": map[string]interface{}{"bus": "sata", "readonly": true}}},
+					"disks":      []interface{}{map[string]interface{}{"name": "root", "disk": map[string]interface{}{"bus": "virtio"}, "bootOrder": int64(1)}, map[string]interface{}{"name": "data", "serial": guestDataDiskSerial(a.UID), "disk": map[string]interface{}{"bus": "virtio"}}, map[string]interface{}{"name": "bootstrap", "cdrom": map[string]interface{}{"bus": "sata", "readonly": true}}},
 					"interfaces": []interface{}{map[string]interface{}{"name": "machine", "masquerade": map[string]interface{}{}, "model": "virtio", "macAddress": a.MAC}},
 				},
 			},
 			"networks": []interface{}{map[string]interface{}{"name": "machine", "pod": map[string]interface{}{"vmNetworkCIDR": a.MachineCIDR}}},
-			"volumes":  []interface{}{map[string]interface{}{"name": "root", "dataVolume": map[string]interface{}{"name": request.Name + "-root"}}, map[string]interface{}{"name": "bootstrap", "secret": map[string]interface{}{"secretName": request.Name + "-bootstrap", "volumeLabel": "SNO-CONFIG"}}},
+			"volumes":  []interface{}{map[string]interface{}{"name": "root", "dataVolume": map[string]interface{}{"name": request.Name + "-root"}}, map[string]interface{}{"name": "data", "persistentVolumeClaim": map[string]interface{}{"claimName": request.Name + "-data"}}, map[string]interface{}{"name": "bootstrap", "secret": map[string]interface{}{"secretName": request.Name + "-bootstrap", "volumeLabel": "SNO-CONFIG"}}},
 		}},
 	}}}
 	return stamp(object, request, request.Name), nil
