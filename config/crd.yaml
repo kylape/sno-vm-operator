@@ -11,7 +11,8 @@ spec:
     kind: SNOVirtualMachine
     listKind: SNOVirtualMachineList
     shortNames:
-    - snovm
+      - snovm
+      - sno
   versions:
   - name: v1alpha1
     served: true
