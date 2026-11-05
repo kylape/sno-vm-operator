@@ -137,37 +137,37 @@ func portableKubeconfig(data []byte, a Allocation) ([]byte, error) {
 // waits until the SNO API, its single node, and all cluster operators are ready.
 // The kubeconfig is already TLS-verified and points at the guest's passthrough
 // API Route, so these checks also validate the external API path.
-func inspectGuest(ctx context.Context, raw []byte, a Allocation) (bool, string, string, error) {
+func inspectGuest(ctx context.Context, raw []byte, a Allocation) (bool, string, string, string, error) {
 	config, err := clientcmd.RESTConfigFromKubeConfig(raw)
 	if err != nil {
-		return false, "", "GuestTrustNotReady", fmt.Errorf("invalid portable guest kubeconfig")
+		return false, "", "GuestTrustNotReady", "Invalid portable guest kubeconfig", fmt.Errorf("invalid portable guest kubeconfig")
 	}
 	config.Timeout = 10 * time.Second
 	kube, err := coretyped.NewForConfig(config)
 	if err != nil {
-		return false, "", "GuestAPIPending", fmt.Errorf("create guest API client: %w", err)
+		return false, "", "GuestAPIPending", "Waiting for the guest API", fmt.Errorf("create guest API client: %w", err)
 	}
 	if err = kube.CoreV1().RESTClient().Get().AbsPath("/readyz").Do(ctx).Error(); err != nil {
-		return false, "", "GuestAPIPending", nil
+		return false, "", "GuestAPIPending", "Waiting for the guest API", nil
 	}
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
-		return false, "", "GuestAPIPending", fmt.Errorf("create guest config API client: %w", err)
+		return false, "", "GuestAPIPending", "Waiting for the guest API", fmt.Errorf("create guest config API client: %w", err)
 	}
 	version, err := dynamicClient.Resource(clusterVersionGVR).Get(ctx, "version", metav1.GetOptions{})
 	if err != nil {
-		return false, "", "GuestAPIPending", nil
+		return false, "", "GuestAPIPending", "Waiting for the guest ClusterVersion", nil
 	}
 	clusterID, _, _ := unstructured.NestedString(version.Object, "spec", "clusterID")
 	if clusterID != a.ClusterID {
 		copy := version.DeepCopy()
 		if err = unstructured.SetNestedField(copy.Object, a.ClusterID, "spec", "clusterID"); err != nil {
-			return false, "", "GuestIdentityPending", fmt.Errorf("set guest cluster identity: %w", err)
+			return false, "", "GuestIdentityPending", "Setting guest cluster identity", fmt.Errorf("set guest cluster identity: %w", err)
 		}
 		if _, err = dynamicClient.Resource(clusterVersionGVR).Update(ctx, copy, metav1.UpdateOptions{}); err != nil {
-			return false, "", "GuestIdentityPending", nil
+			return false, "", "GuestIdentityPending", "Setting guest cluster identity", nil
 		}
-		return false, "", "GuestIdentityPending", nil
+		return false, "", "GuestIdentityPending", "Setting guest cluster identity", nil
 	}
 	versionConditions, _, _ := unstructured.NestedSlice(version.Object, "status", "conditions")
 	versionStates := map[string]string{}
@@ -181,14 +181,14 @@ func inspectGuest(ctx context.Context, raw []byte, a Allocation) (bool, string, 
 		versionStates[typ] = status
 	}
 	if !clusterVersionReady(versionStates) {
-		return false, "", "GuestVersionPending", nil
+		return false, "", "GuestVersionPending", "Waiting for the guest OpenShift version to become ready", nil
 	}
 	nodes, err := kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil || len(nodes.Items) == 0 {
-		return false, "", "GuestNodePending", nil
+		return false, "", "GuestNodePending", "Waiting for the SNO node", nil
 	}
 	if len(nodes.Items) != 1 {
-		return false, "", "GuestNodeCountMismatch", fmt.Errorf("guest must contain exactly one SNO node")
+		return false, "", "GuestNodeCountMismatch", "Guest must contain exactly one SNO node", fmt.Errorf("guest must contain exactly one SNO node")
 	}
 	node := nodes.Items[0]
 	ready := false
@@ -198,11 +198,11 @@ func inspectGuest(ctx context.Context, raw []byte, a Allocation) (bool, string, 
 		}
 	}
 	if !ready {
-		return false, node.Name, "GuestNodePending", nil
+		return false, node.Name, "GuestNodePending", "Waiting for the SNO node to become Ready", nil
 	}
 	operators, err := dynamicClient.Resource(clusterOperatorGVR).List(ctx, metav1.ListOptions{})
 	if err != nil || len(operators.Items) == 0 {
-		return false, node.Name, "GuestOperatorsPending", nil
+		return false, node.Name, "GuestOperatorsPending", "Waiting for guest cluster operators", nil
 	}
 	for _, operator := range operators.Items {
 		conditions, _, _ := unstructured.NestedSlice(operator.Object, "status", "conditions")
@@ -217,10 +217,18 @@ func inspectGuest(ctx context.Context, raw []byte, a Allocation) (bool, string, 
 			states[typ] = status
 		}
 		if states["Available"] != "True" || states["Degraded"] != "False" || states["Progressing"] != "False" {
-			return false, node.Name, "GuestOperatorsPending", nil
+			return false, node.Name, "GuestOperatorsPending", "Waiting for guest cluster operators", nil
 		}
 	}
-	return true, node.Name, "Ready", nil
+	clusterVersion, _, _ := unstructured.NestedString(version.Object, "status", "desired", "version")
+	storageReady, storageReason, storageMessage, err := ensureGuestStorage(ctx, dynamicClient, clusterVersion, a.UID)
+	if err != nil {
+		return false, node.Name, "GuestStorageConfigurationFailed", err.Error(), err
+	}
+	if !storageReady {
+		return false, node.Name, storageReason, storageMessage, nil
+	}
+	return true, node.Name, "Ready", storageMessage, nil
 }
 
 func clusterVersionReady(states map[string]string) bool {
@@ -246,7 +254,7 @@ func (SSHObserver) Observe(ctx context.Context, a Allocation, address string, ma
 		return waiting, nil
 	}
 	waiting.Kubeconfig = portable
-	ready, node, reason, err := inspectGuest(ctx, portable, a)
+	ready, node, reason, message, err := inspectGuest(ctx, portable, a)
 	if err != nil {
 		waiting.Reason = reason
 		waiting.Message = err.Error()
@@ -255,10 +263,6 @@ func (SSHObserver) Observe(ctx context.Context, a Allocation, address string, ma
 	waiting.Node = node
 	waiting.Ready = ready
 	waiting.Reason = reason
-	if ready {
-		waiting.Message = "Guest API, node, and cluster operators are ready"
-	} else {
-		waiting.Message = "Waiting for guest cluster identity and readiness"
-	}
+	waiting.Message = message
 	return waiting, nil
 }

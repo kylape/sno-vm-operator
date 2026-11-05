@@ -127,7 +127,7 @@ func VirtualMachine(request *api.SNOVirtualMachine, a Allocation) (*unstructured
 				"resources": map[string]interface{}{"requests": map[string]interface{}{"cpu": strconv.Itoa(int(hardware.Cores)), "memory": hardware.Memory}},
 				"devices": map[string]interface{}{
 					"rng":        map[string]interface{}{},
-					"disks":      []interface{}{map[string]interface{}{"name": "root", "disk": map[string]interface{}{"bus": "virtio"}, "bootOrder": int64(1)}, map[string]interface{}{"name": "data", "disk": map[string]interface{}{"bus": "virtio"}}, map[string]interface{}{"name": "bootstrap", "cdrom": map[string]interface{}{"bus": "sata", "readonly": true}}},
+					"disks":      []interface{}{map[string]interface{}{"name": "root", "disk": map[string]interface{}{"bus": "virtio"}, "bootOrder": int64(1)}, map[string]interface{}{"name": "data", "serial": guestDataDiskSerial(a.UID), "disk": map[string]interface{}{"bus": "virtio"}}, map[string]interface{}{"name": "bootstrap", "cdrom": map[string]interface{}{"bus": "sata", "readonly": true}}},
 					"interfaces": []interface{}{map[string]interface{}{"name": "machine", "masquerade": map[string]interface{}{}, "model": "virtio", "macAddress": a.MAC}},
 				},
 			},

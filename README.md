@@ -92,12 +92,17 @@ read-only registry Secret name. Use one placement per worker storage pool.
 The cache must retain the compact source capacity; importing it into a 500 GiB
 PVC would restore the full-device copy cost. Provisioned guests use a 200 GiB
 system disk for RHCOS, OpenShift platform data, and ephemeral workload storage,
-plus a separate 300 GiB raw block disk for persistent guest workloads. The
-system disk is above the documented 120 GB SNO minimum; additional operators
-and image caches can require more. The startup gate expands the copied root
-partition and XFS filesystem. Configure LVMS with a device selector for the
-second guest disk only (typically `/dev/vdb`); verify the device name in the
-guest and keep the system disk out of the selector.
+plus a separate raw block disk for persistent guest workloads. LWE sizes
+increase only the workload disk to 200, 400, or 800 GiB; the system disk remains
+200 GiB. The system disk is above the documented 120 GB SNO minimum; additional
+operators and image caches can require more. The startup gate expands the copied
+root partition and XFS filesystem. Once the guest OpenShift operators are ready,
+the SNO operator installs LVMS through OLM and configures only the second disk,
+addressed through its stable virtio serial path. LVMS creates `lvms-workloads`
+as the default guest StorageClass. Its thin pool does not overprovision the
+attached disk. The SNO request does not become Ready until the LVMCluster and
+default StorageClass are ready. Do not use the guest root disk for workload
+PVCs.
 Nodes matching multiple placements are rejected. Only amd64 nodes matching the
 configured worker selectors participate. Cordoned, unready, or untolerated nodes
 remain pending in coverage.
