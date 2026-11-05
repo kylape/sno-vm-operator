@@ -24,20 +24,22 @@ const allocationName = "sno-instance-allocations"
 // Allocation contains no credentials. Persist it before creating disks or VMs;
 // neither status-update failures nor controller restarts may change identity.
 type Allocation struct {
-	UID          string      `json:"uid"`
-	Namespace    string      `json:"namespace"`
-	Name         string      `json:"name"`
-	ClusterName  string      `json:"clusterName"`
-	BaseDomain   string      `json:"baseDomain"`
-	Hostname     string      `json:"hostname"`
-	ClusterID    string      `json:"clusterID"`
-	MachineCIDR  string      `json:"machineCIDR"`
-	IP           string      `json:"ip"`
-	MAC          string      `json:"mac"`
-	Node         string      `json:"node"`
-	StorageClass string      `json:"storageClass"`
-	SourcePVC    string      `json:"sourcePVC"`
-	Image        cache.Image `json:"image"`
+	UID             string      `json:"uid"`
+	Namespace       string      `json:"namespace"`
+	Name            string      `json:"name"`
+	ClusterName     string      `json:"clusterName"`
+	BaseDomain      string      `json:"baseDomain"`
+	Hostname        string      `json:"hostname"`
+	ClusterID       string      `json:"clusterID"`
+	MachineCIDR     string      `json:"machineCIDR"`
+	IP              string      `json:"ip"`
+	MAC             string      `json:"mac"`
+	Node            string      `json:"node"`
+	SourceNamespace string      `json:"sourceNamespace"`
+	StorageClass    string      `json:"storageClass"`
+	SourcePVC       string      `json:"sourcePVC"`
+	SourcePVCUID    string      `json:"sourcePVCUID,omitempty"`
+	Image           cache.Image `json:"image"`
 }
 
 func (a Allocation) Domain() string   { return a.ClusterName + "." + a.BaseDomain }
@@ -135,7 +137,11 @@ func (r Allocator) Create(ctx context.Context, request *api.SNOVirtualMachine, i
 	if !chosen.IsValid() {
 		return nil, fmt.Errorf("guest address pool exhausted")
 	}
-	a := Allocation{UID: uid, Namespace: request.Namespace, Name: request.Name, ClusterName: name, BaseDomain: r.Config.Instances.BaseDomain, Hostname: "sno-" + hex.EncodeToString(hash[:8]), ClusterID: uuid.NewString(), MachineCIDR: chosen.String(), IP: chosen.Addr().Next().Next().String(), MAC: mac, Node: source.Node, StorageClass: source.StorageClass, SourcePVC: source.SourcePVC, Image: image}
+	sourceNamespace := source.Namespace
+	if sourceNamespace == "" {
+		sourceNamespace = r.Config.Namespace
+	}
+	a := Allocation{UID: uid, Namespace: request.Namespace, Name: request.Name, ClusterName: name, BaseDomain: r.Config.Instances.BaseDomain, Hostname: "sno-" + hex.EncodeToString(hash[:8]), ClusterID: uuid.NewString(), MachineCIDR: chosen.String(), IP: chosen.Addr().Next().Next().String(), MAC: mac, Node: source.Node, SourceNamespace: sourceNamespace, StorageClass: source.StorageClass, SourcePVC: source.SourcePVC, SourcePVCUID: source.SourcePVCUID, Image: image}
 	entries[uid] = a
 	b, err := json.Marshal(entries)
 	if err != nil {

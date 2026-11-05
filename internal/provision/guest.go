@@ -12,6 +12,11 @@ import (
 
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	coretyped "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -20,6 +25,7 @@ type Observation struct {
 	Ready        bool
 	Bootstrapped bool
 	Kubeconfig   []byte
+	Node         string
 	Reason       string
 	Message      string
 }
@@ -31,6 +37,9 @@ type GuestObserver interface {
 // SSHObserver trusts the per-instance host key, never the reference key or an
 // accept-any-host callback. Management private keys are never mounted in guests.
 type SSHObserver struct{}
+
+var clusterVersionGVR = schema.GroupVersionResource{Group: "config.openshift.io", Version: "v1", Resource: "clusterversions"}
+var clusterOperatorGVR = schema.GroupVersionResource{Group: "config.openshift.io", Version: "v1", Resource: "clusteroperators"}
 
 func completionValid(data, config []byte, a Allocation) bool {
 	var marker struct {
@@ -124,6 +133,100 @@ func portableKubeconfig(data []byte, a Allocation) ([]byte, error) {
 	return clientcmd.Write(*output)
 }
 
+// inspectGuest pins the cloned cluster's ID to the durable host allocation and
+// waits until the SNO API, its single node, and all cluster operators are ready.
+// The kubeconfig is already TLS-verified and points at the guest's passthrough
+// API Route, so these checks also validate the external API path.
+func inspectGuest(ctx context.Context, raw []byte, a Allocation) (bool, string, string, error) {
+	config, err := clientcmd.RESTConfigFromKubeConfig(raw)
+	if err != nil {
+		return false, "", "GuestTrustNotReady", fmt.Errorf("invalid portable guest kubeconfig")
+	}
+	config.Timeout = 10 * time.Second
+	kube, err := coretyped.NewForConfig(config)
+	if err != nil {
+		return false, "", "GuestAPIPending", fmt.Errorf("create guest API client: %w", err)
+	}
+	if err = kube.CoreV1().RESTClient().Get().AbsPath("/readyz").Do(ctx).Error(); err != nil {
+		return false, "", "GuestAPIPending", nil
+	}
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return false, "", "GuestAPIPending", fmt.Errorf("create guest config API client: %w", err)
+	}
+	version, err := dynamicClient.Resource(clusterVersionGVR).Get(ctx, "version", metav1.GetOptions{})
+	if err != nil {
+		return false, "", "GuestAPIPending", nil
+	}
+	clusterID, _, _ := unstructured.NestedString(version.Object, "spec", "clusterID")
+	if clusterID != a.ClusterID {
+		copy := version.DeepCopy()
+		if err = unstructured.SetNestedField(copy.Object, a.ClusterID, "spec", "clusterID"); err != nil {
+			return false, "", "GuestIdentityPending", fmt.Errorf("set guest cluster identity: %w", err)
+		}
+		if _, err = dynamicClient.Resource(clusterVersionGVR).Update(ctx, copy, metav1.UpdateOptions{}); err != nil {
+			return false, "", "GuestIdentityPending", nil
+		}
+		return false, "", "GuestIdentityPending", nil
+	}
+	versionConditions, _, _ := unstructured.NestedSlice(version.Object, "status", "conditions")
+	versionStates := map[string]string{}
+	for _, item := range versionConditions {
+		condition, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		typ, _, _ := unstructured.NestedString(condition, "type")
+		status, _, _ := unstructured.NestedString(condition, "status")
+		versionStates[typ] = status
+	}
+	if !clusterVersionReady(versionStates) {
+		return false, "", "GuestVersionPending", nil
+	}
+	nodes, err := kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil || len(nodes.Items) == 0 {
+		return false, "", "GuestNodePending", nil
+	}
+	if len(nodes.Items) != 1 {
+		return false, "", "GuestNodeCountMismatch", fmt.Errorf("guest must contain exactly one SNO node")
+	}
+	node := nodes.Items[0]
+	ready := false
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+			ready = true
+		}
+	}
+	if !ready {
+		return false, node.Name, "GuestNodePending", nil
+	}
+	operators, err := dynamicClient.Resource(clusterOperatorGVR).List(ctx, metav1.ListOptions{})
+	if err != nil || len(operators.Items) == 0 {
+		return false, node.Name, "GuestOperatorsPending", nil
+	}
+	for _, operator := range operators.Items {
+		conditions, _, _ := unstructured.NestedSlice(operator.Object, "status", "conditions")
+		states := map[string]string{}
+		for _, item := range conditions {
+			condition, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			typ, _, _ := unstructured.NestedString(condition, "type")
+			status, _, _ := unstructured.NestedString(condition, "status")
+			states[typ] = status
+		}
+		if states["Available"] != "True" || states["Degraded"] != "False" || states["Progressing"] != "False" {
+			return false, node.Name, "GuestOperatorsPending", nil
+		}
+	}
+	return true, node.Name, "Ready", nil
+}
+
+func clusterVersionReady(states map[string]string) bool {
+	return states["Available"] == "True" && states["Failing"] == "False" && states["Progressing"] == "False"
+}
+
 func (SSHObserver) Observe(ctx context.Context, a Allocation, address string, management, bootstrap *corev1.Secret) (Observation, error) {
 	waiting := Observation{Reason: "SpecializationPending", Message: "Waiting for independent guest identity and administrator access"}
 	marker, raw, err := readGuest(ctx, address, management)
@@ -142,9 +245,20 @@ func (SSHObserver) Observe(ctx context.Context, a Allocation, address string, ma
 		waiting.Message = err.Error()
 		return waiting, nil
 	}
-	// API, node, cluster ID, and application checks are performed separately.
 	waiting.Kubeconfig = portable
-	waiting.Reason = "GuestAPIPending"
-	waiting.Message = "Guest identity is specialized; API and application readiness checks remain"
+	ready, node, reason, err := inspectGuest(ctx, portable, a)
+	if err != nil {
+		waiting.Reason = reason
+		waiting.Message = err.Error()
+		return waiting, nil
+	}
+	waiting.Node = node
+	waiting.Ready = ready
+	waiting.Reason = reason
+	if ready {
+		waiting.Message = "Guest API, node, and cluster operators are ready"
+	} else {
+		waiting.Message = "Waiting for guest cluster identity and readiness"
+	}
 	return waiting, nil
 }

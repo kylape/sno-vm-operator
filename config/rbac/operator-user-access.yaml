@@ -1,0 +1,359 @@
+# Apply this file as a cluster administrator after sno-vm-build and
+# sno-vm-system exist. Issue the user a token for sno-vm-operator-user.
+#
+# The cluster binding grants KubeVirt, CDI, SNO API, and Secret access across
+# namespaces, as requested. Keep the token private and rotate it when needed.
+# An administrator installs the SNO CRD; this identity can update only that
+# named CRD later. The runtime operator uses the separate RBAC in manager.yaml.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sno-vm-operator-user
+  namespace: sno-vm-system
+  labels:
+    app.kubernetes.io/managed-by: sno-vm-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sno-vm-operator-user-build
+  namespace: sno-vm-build
+  labels:
+    app.kubernetes.io/managed-by: sno-vm-operator
+rules:
+  - apiGroups:
+      - tekton.dev
+    resources:
+      - pipelines
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - tekton.dev
+    resources:
+      - pipelineruns
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - tekton.dev
+    resources:
+      - taskruns
+    verbs:
+      - delete
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - delete
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - delete
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sno-vm-operator-user-build
+  namespace: sno-vm-build
+  labels:
+    app.kubernetes.io/managed-by: sno-vm-operator
+subjects:
+  - kind: ServiceAccount
+    name: sno-vm-operator-user
+    namespace: sno-vm-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sno-vm-operator-user-build
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sno-vm-operator-user-system
+  namespace: sno-vm-system
+  labels:
+    app.kubernetes.io/managed-by: sno-vm-operator
+rules:
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sno-vm-operator-user-system
+  namespace: sno-vm-system
+  labels:
+    app.kubernetes.io/managed-by: sno-vm-operator
+subjects:
+  - kind: ServiceAccount
+    name: sno-vm-operator-user
+    namespace: sno-vm-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sno-vm-operator-user-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sno-vm-operator-user
+  labels:
+    app.kubernetes.io/managed-by: sno-vm-operator
+rules:
+  - apiGroups:
+      - sno.llm-d.io
+    resources:
+      - snovirtualmachines
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - sno.llm-d.io
+    resources:
+      - snovirtualmachines/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - sno.llm-d.io
+    resources:
+      - snovirtualmachines/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines/status
+    verbs:
+      - get
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachineinstances
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - cdi.kubevirt.io
+    resources:
+      - datavolumes
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - route.openshift.io
+    resources:
+      - routes
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - get
+      - list
+      - patch
+      - watch
+  - apiGroups:
+      - events.k8s.io
+    resources:
+      - events
+    verbs:
+      - create
+      - get
+      - list
+      - patch
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+      - persistentvolumes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - storage.k8s.io
+    resources:
+      - storageclasses
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+    resourceNames:
+      - snovirtualmachines.sno.llm-d.io
+    verbs:
+      - get
+      - patch
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sno-vm-operator-user
+  labels:
+    app.kubernetes.io/managed-by: sno-vm-operator
+subjects:
+  - kind: ServiceAccount
+    name: sno-vm-operator-user
+    namespace: sno-vm-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sno-vm-operator-user

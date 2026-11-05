@@ -20,10 +20,12 @@ import (
 const StatusName = "sno-seed-cache-status"
 
 type Entry struct {
+	Namespace    string      `json:"namespace,omitempty"`
 	Node         string      `json:"node"`
 	Image        string      `json:"image"`
 	StorageClass string      `json:"storageClass"`
 	SourcePVC    string      `json:"sourcePVC"`
+	SourcePVCUID string      `json:"sourcePVCUID,omitempty"`
 	Phase        string      `json:"phase"`
 	Message      string      `json:"message,omitempty"`
 	Attempts     int         `json:"attempts"`
@@ -154,6 +156,7 @@ func (r *Reconciler) Sync(ctx context.Context) error {
 			key := Key(node.Name, *p, image)
 			e := state.Entries[key]
 			e.Node = node.Name
+			e.Namespace = r.Config.Namespace
 			e.Image = image.Reference
 			e.StorageClass = p.StorageClass
 			e.SourcePVC = key
@@ -222,14 +225,17 @@ func (r *Reconciler) syncEntry(ctx context.Context, node corev1.Node, p Placemen
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: image.RegistrySecret, Namespace: r.Config.Namespace}, secret); err != nil {
 		return fmt.Errorf("registry credential Secret unavailable: %w", err)
 	}
-	if len(secret.Data["accessKeyId"]) == 0 || len(secret.Data["secretKey"]) == 0 {
-		return fmt.Errorf("CDI registry Secret requires accessKeyId and secretKey")
+	registrySecretName, err := r.ensureCDIRegistrySecret(ctx, secret, image.Reference)
+	if err != nil {
+		return err
 	}
-	expected := DataVolume(r.Config.Namespace, node.Name, p, image)
+	cdiImage := image
+	cdiImage.RegistrySecret = registrySecretName
+	expected := DataVolume(r.Config.Namespace, node.Name, p, cdiImage)
 	dv := &unstructured.Unstructured{}
 	dv.SetGroupVersionKind(DataVolumeGVK)
 	key := types.NamespacedName{Name: expected.GetName(), Namespace: r.Config.Namespace}
-	err := r.Client.Get(ctx, key, dv)
+	err = r.Client.Get(ctx, key, dv)
 	if apierrors.IsNotFound(err) {
 		// Never adopt or overwrite a pre-existing PVC without its DataVolume.
 		pvc := &corev1.PersistentVolumeClaim{}

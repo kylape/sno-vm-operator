@@ -8,7 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-var GroupVersion = schema.GroupVersion{Group: "sno.klape.io", Version: "v1alpha1"}
+var GroupVersion = schema.GroupVersion{Group: "sno.llm-d.io", Version: "v1alpha1"}
 
 func AddToScheme(s *runtime.Scheme) error {
 	s.AddKnownTypes(GroupVersion, &SNOVirtualMachine{}, &SNOVirtualMachineList{})
@@ -33,9 +33,10 @@ type SNOVirtualMachineSpec struct {
 }
 
 type SNOVirtualMachineStatus struct {
-	Phase                string                       `json:"phase,omitempty"`
-	ImageDigest          string                       `json:"imageDigest,omitempty"`
-	ClusterID            string                       `json:"clusterID,omitempty"`
+	Phase       string `json:"phase,omitempty"`
+	ImageDigest string `json:"imageDigest,omitempty"`
+	ClusterID   string `json:"clusterID,omitempty"`
+	// Node is the host worker selected for the VM and its local seed disk.
 	Node                 string                       `json:"node,omitempty"`
 	VMRef                *corev1.LocalObjectReference `json:"vmRef,omitempty"`
 	RootPVCRef           *corev1.LocalObjectReference `json:"rootPVCRef,omitempty"`

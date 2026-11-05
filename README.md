@@ -8,20 +8,19 @@ are maintained separately.
 
 ## Implementation status
 
-The deployed implementation is the **per-node seed cache controller** and
-operator image build pipeline, with no seed images enabled. Source now includes
-the immutable `SNOVirtualMachine` API/CRD, durable identity/address allocations,
-local disk/VM/API resource builders, and independent bootstrap credentials.
-These are tested provisioning components; the complete instance reconciler,
-readiness handoff, and storage finalizer are not yet wired into the manager.
-`instances.enabled: true` is rejected explicitly in this build.
+The operator now includes the `sno.llm-d.io/v1alpha1` `SNOVirtualMachine`
+reconciliation path: durable allocations, local disk cloning, KubeVirt VM and
+API Route creation, guest identity/readiness checks, kubeconfig publication,
+and deletion cleanup. The code is built and deployed; the first direct test
+completed the root clone, created a Ready KubeVirt VM, admitted the passthrough
+API Route, verified guest identity and readiness, and published a guest
+kubeconfig Secret. The LWE mode adapter has not yet been validated end to end.
 
 The disposable reference SNO is installed and healthy, with verified external
-API TLS/readiness and an internally reachable application route. The
-[LWE SNO adapter](https://github.com/kylape/llm-workload-environment-operator/pull/1)
-is implemented in a draft PR. Seed capture, two-clone recert identity isolation,
-per-node cache qualification, and complete provider integration remain to be
-validated. No five-minute startup result is claimed.
+API TLS/readiness and an internally reachable application route. The LWE SNO
+adapter is on the `feature/sno-mode-integration` branch and has been built and
+deployed. End-to-end VM launch and readiness through an LWE request remain to
+be validated. No five-minute startup result is claimed.
 
 The host currently uses TopoLVM without snapshot classes; CDI selects `copy`.
 A cached seed avoids registry downloads but still requires a measured clone
@@ -34,6 +33,25 @@ Go 1.26 is required. Run `make test` and `make build`. The controller starts wit
 `bin/manager --config=config/cache.example.yaml` and an ordinary kubeconfig or
 in-cluster service account. Running the controller creates Kubernetes resources;
 use an approved target cluster. The image is Linux amd64 initially.
+
+`kubectl kustomize config` renders the CRD, runtime RBAC, Deployment, and cache
+policy together. A cluster administrator must install the CRD initially. The
+development identity can update the named CRD after creation but cannot create
+CRDs. To install only the API and VM lifecycle permissions on an existing
+operator deployment, a cluster administrator applies:
+
+```sh
+kubectl apply -f config/crd.yaml
+kubectl apply -f config/rbac/operator-runtime.yaml
+```
+
+The runtime ClusterRole covers `SNOVirtualMachine`, VM, CDI, Route, Service,
+and PVC operations across request namespaces. Setting the custom API Route
+hostname also requires `create` on the `routes/custom-host` subresource. Secret
+access is in a separate Role bound only in `sno-vm-system`, which is enough for
+a direct request there. LWE requests in `env-*` namespaces will need a
+namespace-scoped Secret Role and RoleBinding in each backing namespace before
+that integration is enabled.
 
 The cache controller polls every 15 seconds under leader election. Restart after
 editing policy; configuration is loaded at startup. It does not expose a
@@ -78,10 +96,23 @@ Nodes matching multiple placements are rejected. Only amd64 nodes matching the
 configured worker selectors participate. Cordoned, unready, or untolerated nodes
 remain pending in coverage.
 
-For CDI `pullMethod: pod`, `seed-registry-read` is an Opaque Secret in
-`sno-vm-system` with `accessKeyId` (Quay robot username) and `secretKey` (robot
-password). The operator only checks that these keys exist. CDI uses them for the
-import. RBAC permits reads of that Secret name only; adjust it if changing policy.
+For a single administrator-run development test, `instances.preloadedImages`
+can reference an already validated candidate PVC by namespace, name, UID, node,
+and storage class. The operator checks the CDI/PVC/PV ownership, block mode,
+capacity, and node locality before cloning it. This path bypasses registry
+import and is intended for controlled candidate testing; production policy
+should use digest-pinned `images` and the per-node cache. Guest bootstrap also
+requires a separate guest-only pull Secret in the configured namespace.
+
+For CDI `pullMethod: pod`, `registrySecret` names a Secret in `sno-vm-system`.
+It can use CDI's Opaque `accessKeyId`/`secretKey` username/password fields or a
+standard Docker config JSON (`.dockerconfigjson` or `config.json`). For Docker
+config JSON, the operator selects the credentials matching the image registry
+and creates an owned CDI-format Secret for the import. The source Secret remains
+unchanged. The same Docker config Secret can also be referenced by
+`instances.guestPullSecret` for guest bootstrap. Credentials must include pull
+access to the Quay seed repository; build push credentials serve a separate
+purpose.
 
 Render deployment resources with `kubectl kustomize config` and review before
 applying. The manifest pins the initial successful Tekton digest; replace it
@@ -123,10 +154,10 @@ architecture filtering, import concurrency across restart, node-specific binding
 PV ownership/locality checks, cache-loss repair, bounded retries, revision
 retention, and refusal to adopt unrelated volumes. They do not validate CDI,
 TopoLVM or recert against the real cluster. The Tekton pipeline has been
-admitted and run successfully on the supplied host. The runtime Deployment is
-healthy under its service account with `images: []`; no cache imports or guest
-VMs are enabled. Provisioning unit tests additionally check durable unique
-identities, retry/exhaustion behavior, local source placement, minimum root
-capacity, TLS passthrough, independent SSH host/client keys, password hashes,
-and separation of management private keys from guest configuration media.
+admitted and run successfully on the supplied host. Provisioning unit tests
+check durable unique identities, retry behavior, local source placement,
+minimum root capacity, TLS passthrough, independent SSH host/client keys,
+password hashes, and separation of management private keys from guest
+configuration media. The compact seed remains unqualified for production use;
+the preloaded profile is an explicit development-only opt-in.
 See [build provenance](docs/build-provenance.md).

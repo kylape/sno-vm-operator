@@ -49,6 +49,9 @@ func TestCredentialsHaveIndependentKeysAndKeepManagementKeyOutOfGuest(t *testing
 	if config.SSHAuthorizedKeys[0] != string(bytes.TrimSpace(ssh.MarshalAuthorizedKey(client.PublicKey()))) {
 		t.Fatal("guest does not authorize its operator client")
 	}
+	if err = validateManagementKeypair(first.Management); err != nil {
+		t.Fatalf("valid independent client and host keys were rejected: %v", err)
+	}
 	if bytes.Contains(first.Bootstrap.Data["config.json"], first.Management.Data["ssh-privatekey"]) {
 		t.Fatal("guest received the operator private key")
 	}

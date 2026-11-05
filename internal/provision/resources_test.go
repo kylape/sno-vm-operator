@@ -72,6 +72,25 @@ func TestSmallerRootAndChangedIdentityAreRejected(t *testing.T) {
 	}
 }
 
+func TestRootCloneUsesExplicitPreloadedSourceNamespace(t *testing.T) {
+	r := allocator(t, "10.252.0.0/16")
+	req := request()
+	source := source()
+	source.Namespace = "sno-seed-build"
+	a, err := r.Create(context.Background(), req, cache.Image{DiskSize: "50Gi"}, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disk, err := RootVolume(req, *a, r.Config.Namespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	namespace, _, _ := unstructured.NestedString(disk.Object, "spec", "source", "pvc", "namespace")
+	if namespace != source.Namespace {
+		t.Fatalf("root clone source namespace=%q, want %q", namespace, source.Namespace)
+	}
+}
+
 func TestExternalAPIKeepsGuestTLSAndInternalApplicationsHaveNoHostRoutes(t *testing.T) {
 	req := request()
 	a := Allocation{ClusterName: "sno-one", BaseDomain: "apps.example.test"}

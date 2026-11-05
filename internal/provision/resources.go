@@ -62,11 +62,15 @@ func RootVolume(request *api.SNOVirtualMachine, a Allocation, cacheNamespace str
 	if err != nil {
 		return nil, err
 	}
-	if a.Node == "" || a.StorageClass == "" || a.SourcePVC == "" || cacheNamespace == "" {
+	sourceNamespace := a.SourceNamespace
+	if sourceNamespace == "" {
+		sourceNamespace = cacheNamespace
+	}
+	if a.Node == "" || a.StorageClass == "" || a.SourcePVC == "" || sourceNamespace == "" {
 		return nil, fmt.Errorf("local clone source placement is incomplete")
 	}
 	object := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": cache.DataVolumeGVK.GroupVersion().String(), "kind": cache.DataVolumeGVK.Kind, "spec": map[string]interface{}{
-		"source":  map[string]interface{}{"pvc": map[string]interface{}{"namespace": cacheNamespace, "name": a.SourcePVC}},
+		"source":  map[string]interface{}{"pvc": map[string]interface{}{"namespace": sourceNamespace, "name": a.SourcePVC}},
 		"storage": map[string]interface{}{"storageClassName": a.StorageClass, "volumeMode": "Block", "accessModes": []interface{}{"ReadWriteOnce"}, "resources": map[string]interface{}{"requests": map[string]interface{}{"storage": hardware.RootDisk}}},
 	}}}
 	return stamp(object, request, request.Name+"-root"), nil

@@ -14,7 +14,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	api "github.com/kylape/sno-vm-operator/api/v1alpha1"
 	"github.com/kylape/sno-vm-operator/internal/cache"
+	"github.com/kylape/sno-vm-operator/internal/provision"
 )
 
 func main() {
@@ -33,10 +35,6 @@ func main() {
 		logger.Error(err, "invalid configuration")
 		os.Exit(1)
 	}
-	if policy.Instances.Enabled {
-		logger.Error(nil, "instance reconciliation is not available in this build; keep instances.enabled=false")
-		os.Exit(1)
-	}
 	if interval < time.Second {
 		logger.Error(nil, "interval must be at least one second")
 		os.Exit(1)
@@ -46,6 +44,9 @@ func main() {
 		panic(err)
 	}
 	if err = storagev1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
+	if err = api.AddToScheme(scheme); err != nil {
 		panic(err)
 	}
 	kubeconfig := ctrl.GetConfigOrDie()
@@ -68,13 +69,16 @@ func main() {
 	if err = manager.Add(&cache.Reconciler{Client: apiClient, Config: policy, Interval: interval}); err != nil {
 		panic(err)
 	}
+	if err = manager.Add(&provision.InstanceReconciler{Client: apiClient, Config: policy, Interval: interval}); err != nil {
+		panic(err)
+	}
 	if err = manager.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		panic(err)
 	}
 	if err = manager.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		panic(err)
 	}
-	logger.Info("starting cache controller; instance provisioning is not enabled")
+	logger.Info("starting SNO operator", "instanceProvisioning", policy.Instances.Enabled)
 	if err = manager.Start(ctrl.SetupSignalHandler()); err != nil {
 		logger.Error(err, "manager stopped")
 		os.Exit(1)

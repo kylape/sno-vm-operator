@@ -1,9 +1,9 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: snovirtualmachines.sno.klape.io
+  name: snovirtualmachines.sno.llm-d.io
 spec:
-  group: sno.klape.io
+  group: sno.llm-d.io
   scope: Namespaced
   names:
     plural: snovirtualmachines
@@ -11,7 +11,8 @@ spec:
     kind: SNOVirtualMachine
     listKind: SNOVirtualMachineList
     shortNames:
-    - snovm
+      - snovm
+      - sno
   versions:
   - name: v1alpha1
     served: true
