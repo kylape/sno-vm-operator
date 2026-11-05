@@ -180,7 +180,7 @@ func inspectGuest(ctx context.Context, raw []byte, a Allocation) (bool, string, 
 		status, _, _ := unstructured.NestedString(condition, "status")
 		versionStates[typ] = status
 	}
-	if versionStates["Available"] != "True" || versionStates["Degraded"] != "False" || versionStates["Progressing"] != "False" {
+	if !clusterVersionReady(versionStates) {
 		return false, "", "GuestVersionPending", nil
 	}
 	nodes, err := kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
@@ -221,6 +221,10 @@ func inspectGuest(ctx context.Context, raw []byte, a Allocation) (bool, string, 
 		}
 	}
 	return true, node.Name, "Ready", nil
+}
+
+func clusterVersionReady(states map[string]string) bool {
+	return states["Available"] == "True" && states["Failing"] == "False" && states["Progressing"] == "False"
 }
 
 func (SSHObserver) Observe(ctx context.Context, a Allocation, address string, management, bootstrap *corev1.Secret) (Observation, error) {
