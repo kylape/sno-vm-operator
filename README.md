@@ -12,9 +12,9 @@ The operator now includes the `sno.llm-d.io/v1alpha1` `SNOVirtualMachine`
 reconciliation path: durable allocations, local disk cloning, KubeVirt VM and
 API Route creation, guest identity/readiness checks, kubeconfig publication,
 and deletion cleanup. The code is built and deployed; the first direct test
-created the guest VM and completed the root clone. OpenShift currently rejects
-the API Route because the runtime ClusterRole lacks `routes/custom-host`
-permission. Guest API and bootstrap readiness are not yet confirmed.
+completed the root clone, created a Ready KubeVirt VM, admitted the passthrough
+API Route, verified guest identity and readiness, and published a guest
+kubeconfig Secret. The LWE mode adapter has not yet been validated end to end.
 
 The disposable reference SNO is installed and healthy, with verified external
 API TLS/readiness and an internally reachable application route. The LWE SNO
