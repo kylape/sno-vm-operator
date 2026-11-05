@@ -185,6 +185,13 @@ func (r *InstanceReconciler) syncOne(ctx context.Context, request *api.SNOVirtua
 		return r.report(ctx, request, "Provisioning", "Ready", metav1.ConditionFalse, "RootPVCUnbound", "Waiting for the cloned root PVC", "")
 	}
 	request.Status.RootPVCRef = &corev1.LocalObjectReference{Name: rootPVC.Name}
+	workloadVolume, err := WorkloadVolume(request, a)
+	if err != nil {
+		return r.reportError(ctx, request, "Failed", "InvalidWorkloadVolume", err)
+	}
+	if _, err = ensureObject(ctx, r.Client, request, workloadVolume); err != nil {
+		return r.reportError(ctx, request, "Failed", "WorkloadVolumeCollision", err)
+	}
 
 	vm, err := VirtualMachine(request, a)
 	if err != nil {
@@ -417,6 +424,9 @@ func (r *InstanceReconciler) cleanup(ctx context.Context, request *api.SNOVirtua
 		return err
 	}
 	if err = r.deleteNamedOwned(ctx, request, &corev1.Pod{}, request.Name+"-root-bind"); err != nil {
+		return err
+	}
+	if err = r.deleteNamedOwned(ctx, request, &corev1.PersistentVolumeClaim{}, request.Name+"-data"); err != nil {
 		return err
 	}
 	if request.Spec.RootDiskRetentionPolicy == "Retain" {

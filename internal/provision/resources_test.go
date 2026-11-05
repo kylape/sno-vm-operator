@@ -13,7 +13,7 @@ import (
 func TestCloneAndVMKeepDurableLocalPlacementAndSeparateCredentials(t *testing.T) {
 	r := allocator(t, "10.252.0.0/16")
 	req := request()
-	a, err := r.Create(context.Background(), req, cache.Image{DiskSize: "500Gi"}, source())
+	a, err := r.Create(context.Background(), req, cache.Image{DiskSize: "50Gi"}, source())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestCloneAndVMKeepDurableLocalPlacementAndSeparateCredentials(t *testing.T)
 		}
 	}
 	volumes, _, _ := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "volumes")
-	label, _, _ := unstructured.NestedString(volumes[1].(map[string]interface{}), "secret", "volumeLabel")
+	label, _, _ := unstructured.NestedString(volumes[2].(map[string]interface{}), "secret", "volumeLabel")
 	if label != "SNO-CONFIG" {
 		t.Fatal("guest gate cannot discover its configuration media")
 	}
@@ -57,15 +57,15 @@ func TestCloneAndVMKeepDurableLocalPlacementAndSeparateCredentials(t *testing.T)
 func TestSmallerRootAndChangedIdentityAreRejected(t *testing.T) {
 	r := allocator(t, "10.252.0.0/16")
 	req := request()
-	a, err := r.Create(context.Background(), req, cache.Image{DiskSize: "500Gi"}, source())
+	a, err := r.Create(context.Background(), req, cache.Image{DiskSize: "50Gi"}, source())
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Spec.Resources.RootDisk = "100Gi"
+	req.Spec.Resources.RootDisk = "40Gi"
 	if _, err = RootVolume(req, *a, "sno-vm-system"); err == nil {
 		t.Fatal("allowed truncation of source virtual disk")
 	}
-	req.Spec.Resources.RootDisk = "500Gi"
+	req.Spec.Resources.RootDisk = "200Gi"
 	req.UID = "different"
 	if _, err = VirtualMachine(req, *a); err == nil {
 		t.Fatal("allowed VM identity replacement")

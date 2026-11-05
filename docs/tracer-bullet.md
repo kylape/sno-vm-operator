@@ -1,8 +1,9 @@
 # Administrator tracer bullet
 
 The initial 500 GiB reference established the first working clone. A corrected
-50 GiB seed now passes two independent first boots and an identity-preserving
-reboot, using 500 GiB destination disks on worker LVM storage. See the
+50 GiB seed passed two independent first boots and an identity-preserving
+reboot, using 500 GiB destination disks on worker LVM storage. New instances use
+a 200 GiB system disk plus a separate 300 GiB workload disk. See the
 [measured verification results](https://gitlab.cee.redhat.com/klape/inference-engineering-scratchpad/-/blob/main/sno-virt-image/verification.md).
 Clone/scheduling takes about four minutes with current CDI defaults; the
 five-minute API/application target remains unfinished.

@@ -65,7 +65,12 @@ spec:
                     type: string
                     maxLength: 32
                     pattern: ^[1-9][0-9]*(Mi|Gi|Ti)$
-                    default: 500Gi
+                    default: 200Gi
+                  dataDisk:
+                    type: string
+                    maxLength: 32
+                    pattern: ^[1-9][0-9]*(Mi|Gi|Ti)$
+                    default: 300Gi
               rootDiskRetentionPolicy:
                 type: string
                 default: Delete

@@ -46,12 +46,12 @@ kubectl apply -f config/rbac/operator-runtime.yaml
 ```
 
 The runtime ClusterRole covers `SNOVirtualMachine`, VM, CDI, Route, Service,
-and PVC operations across request namespaces. Setting the custom API Route
-hostname also requires `create` on the `routes/custom-host` subresource. Secret
-access is in a separate Role bound only in `sno-vm-system`, which is enough for
-a direct request there. LWE requests in `env-*` namespaces will need a
-namespace-scoped Secret Role and RoleBinding in each backing namespace before
-that integration is enabled.
+Pod, PVC, and Secret operations across request namespaces. Secret access uses
+`create`, `get`, `update`, and `delete` so the operator can provision SNO
+instances outside `sno-vm-system`. The guest bootstrap Secret contains the
+configured OpenShift pull Secret; the separate `sno-credentials` Secret
+contains the guest API kubeconfig. Setting the custom API Route hostname also
+requires `create` on the `routes/custom-host` subresource.
 
 The cache controller polls every 15 seconds under leader election. Restart after
 editing policy; configuration is loaded at startup. It does not expose a
@@ -90,8 +90,14 @@ image, prove that its powered-off disk is safe to clone and record its immutable
 Quay digest. Copy the policy and supply the digest, `50Gi` seed disk size, and the
 read-only registry Secret name. Use one placement per worker storage pool.
 The cache must retain the compact source capacity; importing it into a 500 GiB
-PVC would restore the full-device copy cost. Provisioned guests can still use
-500 GiB roots, with partition and filesystem growth before specialization.
+PVC would restore the full-device copy cost. Provisioned guests use a 200 GiB
+system disk for RHCOS, OpenShift platform data, and ephemeral workload storage,
+plus a separate 300 GiB raw block disk for persistent guest workloads. The
+system disk is above the documented 120 GB SNO minimum; additional operators
+and image caches can require more. The startup gate expands the copied root
+partition and XFS filesystem. Configure LVMS with a device selector for the
+second guest disk only (typically `/dev/vdb`); verify the device name in the
+guest and keep the system disk out of the selector.
 Nodes matching multiple placements are rejected. Only amd64 nodes matching the
 configured worker selectors participate. Cordoned, unready, or untolerated nodes
 remain pending in coverage.
