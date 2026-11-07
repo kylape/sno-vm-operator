@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sno-vm-operator-user-guestfs
+  namespace: sno-vm-system
+  labels:
+    app.kubernetes.io/managed-by: sno-vm-operator
+subjects:
+  - kind: ServiceAccount
+    name: sno-vm-operator-user
+    namespace: sno-vm-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sno-vm-operator-user-guestfs

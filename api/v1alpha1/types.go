@@ -26,8 +26,13 @@ type Resources struct {
 // Spec is immutable. Established identity and storage must never change during
 // retries, profile rollout, or a controller restart.
 type SNOVirtualMachineSpec struct {
-	ImageProfile            string                       `json:"imageProfile,omitempty"`
-	ClusterName             string                       `json:"clusterName,omitempty"`
+	ImageProfile string `json:"imageProfile,omitempty"`
+	ClusterName  string `json:"clusterName,omitempty"`
+	// MaxPods overrides the CPU-tier-derived guest kubelet pod limit.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2000
+	MaxPods                 int32                        `json:"maxPods,omitempty"`
 	Resources               Resources                    `json:"resources,omitempty"`
 	RootDiskRetentionPolicy string                       `json:"rootDiskRetentionPolicy,omitempty"`
 	SSHPublicKeySecretRef   *corev1.LocalObjectReference `json:"sshPublicKeySecretRef,omitempty"`

@@ -10,6 +10,7 @@ import (
 	"net"
 	"time"
 
+	api "github.com/kylape/sno-vm-operator/api/v1alpha1"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,7 +32,7 @@ type Observation struct {
 }
 
 type GuestObserver interface {
-	Observe(context.Context, Allocation, string, *corev1.Secret, *corev1.Secret) (Observation, error)
+	Observe(context.Context, Allocation, api.Resources, int32, string, *corev1.Secret, *corev1.Secret) (Observation, error)
 }
 
 // SSHObserver trusts the per-instance host key, never the reference key or an
@@ -137,7 +138,7 @@ func portableKubeconfig(data []byte, a Allocation) ([]byte, error) {
 // waits until the SNO API, its single node, and all cluster operators are ready.
 // The kubeconfig is already TLS-verified and points at the guest's passthrough
 // API Route, so these checks also validate the external API path.
-func inspectGuest(ctx context.Context, raw []byte, a Allocation) (bool, string, string, string, error) {
+func inspectGuest(ctx context.Context, raw []byte, a Allocation, hardware api.Resources, maxPods int32) (bool, string, string, string, error) {
 	config, err := clientcmd.RESTConfigFromKubeConfig(raw)
 	if err != nil {
 		return false, "", "GuestTrustNotReady", "Invalid portable guest kubeconfig", fmt.Errorf("invalid portable guest kubeconfig")
@@ -220,6 +221,13 @@ func inspectGuest(ctx context.Context, raw []byte, a Allocation) (bool, string, 
 			return false, node.Name, "GuestOperatorsPending", "Waiting for guest cluster operators", nil
 		}
 	}
+	limitReady, limitReason, limitMessage, err := ensureGuestMaxPods(ctx, dynamicClient, hardware.Cores, maxPods, &node, a.UID)
+	if err != nil {
+		return false, node.Name, limitReason, limitMessage, err
+	}
+	if !limitReady {
+		return false, node.Name, limitReason, limitMessage, nil
+	}
 	clusterVersion, _, _ := unstructured.NestedString(version.Object, "status", "desired", "version")
 	storageReady, storageReason, storageMessage, err := ensureGuestStorage(ctx, dynamicClient, clusterVersion, a.UID)
 	if err != nil {
@@ -228,14 +236,14 @@ func inspectGuest(ctx context.Context, raw []byte, a Allocation) (bool, string, 
 	if !storageReady {
 		return false, node.Name, storageReason, storageMessage, nil
 	}
-	return true, node.Name, "Ready", storageMessage, nil
+	return true, node.Name, "Ready", limitMessage + "; " + storageMessage, nil
 }
 
 func clusterVersionReady(states map[string]string) bool {
 	return states["Available"] == "True" && states["Failing"] == "False" && states["Progressing"] == "False"
 }
 
-func (SSHObserver) Observe(ctx context.Context, a Allocation, address string, management, bootstrap *corev1.Secret) (Observation, error) {
+func (SSHObserver) Observe(ctx context.Context, a Allocation, hardware api.Resources, maxPods int32, address string, management, bootstrap *corev1.Secret) (Observation, error) {
 	waiting := Observation{Reason: "SpecializationPending", Message: "Waiting for independent guest identity and administrator access"}
 	marker, raw, err := readGuest(ctx, address, management)
 	if err != nil {
@@ -254,7 +262,7 @@ func (SSHObserver) Observe(ctx context.Context, a Allocation, address string, ma
 		return waiting, nil
 	}
 	waiting.Kubeconfig = portable
-	ready, node, reason, message, err := inspectGuest(ctx, portable, a)
+	ready, node, reason, message, err := inspectGuest(ctx, portable, a, hardware, maxPods)
 	if err != nil {
 		waiting.Reason = reason
 		waiting.Message = err.Error()

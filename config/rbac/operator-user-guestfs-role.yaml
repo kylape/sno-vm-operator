@@ -1,0 +1,21 @@
+# Additive, namespace-scoped access for `virtctl guestfs` diagnostics.
+# The existing development ClusterRole supplies PVC/Pod reads and Pod delete.
+# Pod creation and attach are required by virtctl's libguestfs helper workflow.
+# These permissions can create and attach to any Pod in sno-vm-system. The
+# guestfs helper mounts the requested PVC read-write; use this only for the
+# diagnostic window and avoid writes to the proof disk.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sno-vm-operator-user-guestfs
+  namespace: sno-vm-system
+  labels:
+    app.kubernetes.io/managed-by: sno-vm-operator
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/attach
+    verbs:
+      - create

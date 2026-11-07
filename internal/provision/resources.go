@@ -36,6 +36,9 @@ func stamp(object *unstructured.Unstructured, request *api.SNOVirtualMachine, na
 // a disk smaller than the immutable imported source's virtual capacity.
 func Hardware(request *api.SNOVirtualMachine, a Allocation) (api.Resources, error) {
 	result := request.Spec.Resources
+	if request.Spec.MaxPods < 0 || request.Spec.MaxPods > 2000 {
+		return result, fmt.Errorf("maxPods must be between 1 and 2000 when specified")
+	}
 	if result.Cores == 0 {
 		result.Cores = 16
 	}

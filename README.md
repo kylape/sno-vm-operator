@@ -103,6 +103,21 @@ as the default guest StorageClass. Its thin pool does not overprovision the
 attached disk. The SNO request does not become Ready until the LVMCluster and
 default StorageClass are ready. Do not use the guest root disk for workload
 PVCs.
+
+The operator sets the guest kubelet pod limit from the SNO CPU tier: 500 for
+up to 16 cores, 1,000 for up to 32 cores, and 2,000 above 32 cores. It disables
+`podsPerCore` so that setting does not silently lower the requested limit, and
+waits for the Machine Config Operator and node capacity to reflect the change
+before reporting the guest Ready. Applying a KubeletConfig can reboot the SNO
+guest during provisioning. `SNOVirtualMachine.spec.maxPods` optionally overrides
+the CPU-derived limit, from 1 through 2,000; the LWE API exposes this as
+`spec.sno.maxPods`.
+
+The current qualified SNO seed uses a `/21` per-node pod prefix, which
+provides over 2,000 usable pod IP addresses and supports the 500, 1,000, and
+2,000 kubelet limits. Earlier seeds used a `/23` pod subnet with 510 usable
+addresses, which could not support the 1,000 and 2,000 limits.
+
 Nodes matching multiple placements are rejected. Only amd64 nodes matching the
 configured worker selectors participate. Cordoned, unready, or untolerated nodes
 remain pending in coverage.

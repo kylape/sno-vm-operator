@@ -1,10 +1,10 @@
 # Apply this file as a cluster administrator after sno-vm-build and
 # sno-vm-system exist. Issue the user a token for sno-vm-operator-user.
 #
-# The cluster binding grants KubeVirt, CDI, SNO API, and Secret access across
-# namespaces, as requested. Keep the token private and rotate it when needed.
-# An administrator installs the SNO CRD; this identity can update only that
-# named CRD later. The runtime operator uses the separate RBAC in manager.yaml.
+# One ClusterRole/ClusterRoleBinding pair holds all one-off development access.
+# Because the binding is cluster-wide, every rule below applies in every
+# namespace. Keep the token private and rotate it when needed. The runtime
+# operator uses the separate RBAC in manager.yaml.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -14,10 +14,9 @@ metadata:
     app.kubernetes.io/managed-by: sno-vm-operator
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
-  name: sno-vm-operator-user-build
-  namespace: sno-vm-build
+  name: sno-vm-operator-user
   labels:
     app.kubernetes.io/managed-by: sno-vm-operator
 rules:
@@ -49,63 +48,6 @@ rules:
       - list
       - watch
   - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs:
-      - delete
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - pods/log
-    verbs:
-      - get
-  - apiGroups:
-      - ""
-    resources:
-      - persistentvolumeclaims
-    verbs:
-      - delete
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - events
-    verbs:
-      - get
-      - list
-      - watch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: sno-vm-operator-user-build
-  namespace: sno-vm-build
-  labels:
-    app.kubernetes.io/managed-by: sno-vm-operator
-subjects:
-  - kind: ServiceAccount
-    name: sno-vm-operator-user
-    namespace: sno-vm-system
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: sno-vm-operator-user-build
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: sno-vm-operator-user-system
-  namespace: sno-vm-system
-  labels:
-    app.kubernetes.io/managed-by: sno-vm-operator
-rules:
-  - apiGroups:
       - apps
     resources:
       - deployments
@@ -130,51 +72,13 @@ rules:
       - update
       - watch
   - apiGroups:
-      - ""
+      - subresources.kubevirt.io
     resources:
-      - pods
+      - virtualmachines/portforward
+      - virtualmachineinstances/console
+      - virtualmachineinstances/vnc
     verbs:
       - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - pods/log
-    verbs:
-      - get
-  - apiGroups:
-      - ""
-    resources:
-      - events
-    verbs:
-      - get
-      - list
-      - watch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: sno-vm-operator-user-system
-  namespace: sno-vm-system
-  labels:
-    app.kubernetes.io/managed-by: sno-vm-operator
-subjects:
-  - kind: ServiceAccount
-    name: sno-vm-operator-user
-    namespace: sno-vm-system
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: sno-vm-operator-user-system
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: sno-vm-operator-user
-  labels:
-    app.kubernetes.io/managed-by: sno-vm-operator
-rules:
   - apiGroups:
       - sno.llm-d.io
     resources:
@@ -265,6 +169,7 @@ rules:
       - persistentvolumeclaims
       - pods
     verbs:
+      - delete
       - get
       - list
       - watch

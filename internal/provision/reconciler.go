@@ -120,7 +120,8 @@ func (r *InstanceReconciler) syncOne(ctx context.Context, request *api.SNOVirtua
 	request.Status.VMRef = &corev1.LocalObjectReference{Name: request.Name}
 	request.Status.RootPVCRef = &corev1.LocalObjectReference{Name: request.Name + "-root"}
 	setMilestone(request, "Allocated")
-	if _, err = Hardware(request, a); err != nil {
+	hardware, err := Hardware(request, a)
+	if err != nil {
 		return r.reportError(ctx, request, "Failed", "InvalidResources", err)
 	}
 
@@ -226,7 +227,7 @@ func (r *InstanceReconciler) syncOne(ctx context.Context, request *api.SNOVirtua
 		observer = SSHObserver{}
 	}
 	observeCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	observation, err := observer.Observe(observeCtx, a, service.Spec.ClusterIP, management, bootstrap)
+	observation, err := observer.Observe(observeCtx, a, hardware, request.Spec.MaxPods, service.Spec.ClusterIP, management, bootstrap)
 	cancel()
 	if err != nil {
 		return r.reportError(ctx, request, "Reconciling", "GuestObservationFailed", err)
